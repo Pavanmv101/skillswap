@@ -13,7 +13,7 @@ SkillSwap is a full-stack MERN (MongoDB, Express, React, Node.js) platform desig
 | **Backend** | Node.js, Express 5 | RESTful API architecture |
 | **Database** | MongoDB, Mongoose | Relational-like schema with subdocuments & references |
 | **Authentication**| JWT (`jsonwebtoken`) & `bcryptjs` | Stateless bearer token authentication |
-| **Video Calls** | Jitsi Meet (iframe embed) | WebRTC-based free public rooms, zero setup required |
+| **Video Calls** | Custom Native WebRTC & Socket.io | Peer-to-peer audio/video streaming, screen sharing, STUN signaling |
 
 ---
 
@@ -193,8 +193,12 @@ To keep the application transparent and explainable to academic panels without b
 **Q: How are passwords and authentication secured?**
 > A: Passwords are encrypted using salted one-way hashing via `bcryptjs` (salt rounds = 10) before persisting to MongoDB. Authenticated sessions use signed JSON Web Tokens (JWT) transmitted via the standard `Authorization: Bearer <token>` HTTP header.
 
-**Q: How are video calls implemented without external subscription costs?**
-> A: We integrate Jitsi Meet via an iframe embed using unique room identifiers (`skillswap-<swapId>`). When a swap is accepted, a secure room ID is generated and shared between the two participants, leveraging open WebRTC standards.
+**Q: How is native WebRTC implemented for video calling?**
+> A: We built a custom WebRTC implementation without relying on third-party services. The architecture consists of:
+> 1. **Media Capture**: `navigator.mediaDevices.getUserMedia()` accesses user webcam and microphone streams.
+> 2. **Signaling Server**: An Express + Socket.io server relays SDP (Session Description Protocol) offers, answers, and ICE candidates between peers.
+> 3. **P2P Connection**: `new RTCPeerConnection()` establishes a direct peer-to-peer connection utilizing public Google STUN servers (`stun:stun.l.google.com:19302`) for NAT traversal.
+> 4. **Screen Sharing**: `navigator.mediaDevices.getDisplayMedia()` dynamically replaces the outgoing video track on the WebRTC sender.
 
 **Q: How is data consistency maintained for user ratings?**
 > A: Each rating is stored as an individual record linking the swap request, rater, and ratee. Upon creating a rating, the controller prevents duplicate ratings for the same swap and re-computes `averageRating` and `totalRatings` on the ratee's User document.
