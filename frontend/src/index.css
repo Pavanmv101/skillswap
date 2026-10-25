@@ -1990,6 +1990,35 @@ button, input, select, textarea {
   box-shadow: 0 0 20px rgba(239, 68, 68, 0.6);
 }
 
+/* ─── Split Screen View Mode ────────────────────────────────────────────── */
+.layout-split {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+  padding: 1.25rem;
+}
+
+.layout-split .remote-video-box,
+.layout-split .local-video-box {
+  position: relative !important;
+  bottom: auto !important;
+  right: auto !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: none !important;
+  max-height: none !important;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.live-pill {
+  color: #ef4444;
+  font-weight: 800;
+  font-size: 0.68rem;
+  letter-spacing: 0.05em;
+  margin-left: 0.35rem;
+}
+
 @media (max-width: 768px) {
   .local-video-box {
     width: 140px;
