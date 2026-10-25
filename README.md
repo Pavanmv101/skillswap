@@ -119,10 +119,10 @@ npm start
 cd frontend
 npm install
 npm run dev
-# -> Local: http://localhost:3000
+# -> Local: http://localhost:3001
 ```
 
-Open `http://localhost:3000` in your web browser.
+Open `http://localhost:3001` in your web browser.
 
 ---
 
