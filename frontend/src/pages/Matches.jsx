@@ -1,17 +1,21 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import api from '../api/axios'
 import Spinner from '../components/Spinner'
 import CompatBar from '../components/CompatBar'
 import SwapModal from '../components/SwapModal'
 import Stars from '../components/Stars'
+import Avatar from '../components/Avatar'
+
+const CATEGORY_FILTERS = ['All', 'High Match (70%+)', 'Schedule Match', 'Programming', 'Design', 'Music', 'Academic']
 
 export default function Matches() {
   const [matches, setMatches] = useState([])
   const [search,  setSearch]  = useState('')
+  const [selectedFilter, setSelectedFilter] = useState('All')
   const [results, setResults] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [swapTarget, setSwapTarget] = useState(null) // opens SwapModal
+  const [swapTarget, setSwapTarget] = useState(null)
   const [error, setError] = useState('')
 
   // Load ranked matches
@@ -20,18 +24,25 @@ export default function Matches() {
       try {
         const { data } = await api.get('/match')
         setMatches(data.matches || [])
-        if (data.message) setError(data.message)
+        if (data.message && (!data.matches || data.matches.length === 0)) {
+          setError(data.message)
+        }
       } catch (err) {
         setError(err.response?.data?.message || 'Failed to load matches')
-      } finally { setLoading(false) }
+      } finally {
+        setLoading(false)
+      }
     }
     load()
   }, [])
 
-  // Search
+  // Handle Search
   async function handleSearch(e) {
     e.preventDefault()
-    if (!search.trim()) { setResults(null); return }
+    if (!search.trim()) {
+      setResults(null)
+      return
+    }
     try {
       const { data } = await api.get(`/match/search?q=${encodeURIComponent(search.trim())}`)
       setResults(data)
@@ -40,84 +51,246 @@ export default function Matches() {
     }
   }
 
-  if (loading) return <Spinner message="Finding matches…" />
+  // Filter matches based on category/score
+  const filteredMatches = useMemo(() => {
+    if (!matches) return []
+    if (selectedFilter === 'All') return matches
+    if (selectedFilter === 'High Match (70%+)') {
+      return matches.filter(m => m.compatibilityScore >= 70)
+    }
+    if (selectedFilter === 'Schedule Match') {
+      return matches.filter(m => m.availabilityOverlap === true)
+    }
+    // Filter by skill category in skillsOffered
+    return matches.filter(m =>
+      (m.user?.skillsOffered || []).some(s => s.category?.toLowerCase() === selectedFilter.toLowerCase())
+    )
+  }, [matches, selectedFilter])
+
+  if (loading) return <Spinner message="Computing bidirectional compatibility matches…" />
 
   return (
     <div className="page">
-      <h2>Skill Matches</h2>
+      <div className="page-header-flex">
+        <div>
+          <h2 className="page-title">Peer Skill Matches</h2>
+          <p className="page-sub">
+            Ranked by mutual skill overlap (up to 60 pts forward + 40 pts reverse bidirectionality bonus).
+          </p>
+        </div>
+      </div>
 
-      {/* Search */}
-      <form onSubmit={handleSearch} style={{ display: 'flex', gap: '.5rem', marginBottom: '1.5rem' }}>
-        <input className="form-input" placeholder="Search by name or skill…" value={search} onChange={e => setSearch(e.target.value)} style={{ flex: 1 }} />
-        <button type="submit" className="btn btn-primary">Search</button>
-        {results !== null && <button type="button" className="btn btn-muted" onClick={() => { setResults(null); setSearch('') }}>Clear</button>}
+      {/* Search Bar */}
+      <form onSubmit={handleSearch} className="search-form">
+        <div className="search-input-wrapper">
+          <span className="search-icon">🔍</span>
+          <input
+            className="form-input search-input"
+            placeholder="Search by peer name, skill (e.g. Python, React), or topic…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+          {search && (
+            <button
+              type="button"
+              className="search-clear-btn"
+              onClick={() => { setSearch(''); setResults(null) }}
+            >
+              ✕
+            </button>
+          )}
+        </div>
+        <button type="submit" className="btn btn-primary">
+          Search
+        </button>
       </form>
 
-      {error && <div className="alert alert-error">⚠ {error}</div>}
+      {/* Category Pills (only show when not in custom search mode) */}
+      {results === null && (
+        <div className="filter-pills-row">
+          {CATEGORY_FILTERS.map(f => (
+            <button
+              key={f}
+              className={`filter-pill ${selectedFilter === f ? 'filter-pill-active' : ''}`}
+              onClick={() => setSelectedFilter(f)}
+            >
+              {f}
+            </button>
+          ))}
+        </div>
+      )}
 
-      {/* Search Results */}
+      {error && <div className="alert alert-info">💡 {error}</div>}
+
+      {/* Custom Search Results View */}
       {results !== null ? (
-        <>
-          <h3>Search Results ({results.length})</h3>
-          {results.length === 0 && <p style={{ color: 'var(--text-muted)' }}>No users found.</p>}
-          <div className="card-list">
-            {results.map(u => (
-              <div className="card" key={u._id}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Link to={`/user/${u._id}`} className="card-name">{u.name}</Link>
-                  <Stars value={u.averageRating} count={u.totalRatings} />
-                </div>
-                {u.bio && <p style={{ fontSize: '.85rem', color: 'var(--text-muted)', margin: '.4rem 0' }}>{u.bio}</p>}
-                <p style={{ fontSize: '.85rem' }}>
-                  <strong>Teaches:</strong> {(u.skillsOffered || []).map(s => s.skill).join(', ') || 'None'}
-                </p>
-                <button className="btn btn-accent btn-sm" style={{ marginTop: '.5rem' }} onClick={() => setSwapTarget({ user: u })}>
-                  Request Swap
-                </button>
-              </div>
-            ))}
+        <div style={{ marginTop: '1.5rem' }}>
+          <div className="section-title-row">
+            <h3>Search Results ({results.length})</h3>
+            <button
+              className="btn btn-muted btn-sm"
+              onClick={() => { setResults(null); setSearch('') }}
+            >
+              Back to Ranked Matches
+            </button>
           </div>
-        </>
-      ) : (
-        <>
-          {/* Ranked Matches */}
-          <h3>Your Top Matches ({matches.length})</h3>
-          {matches.length === 0 && (
-            <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
-              <p>No matches yet.</p>
-              <p>Go to <Link to="/profile">Profile</Link> and add skills you want to learn!</p>
+
+          {results.length === 0 ? (
+            <div className="empty-card">
+              <div className="empty-icon">🔎</div>
+              <h3>No users found</h3>
+              <p>Try searching for a different skill name or keyword.</p>
+            </div>
+          ) : (
+            <div className="card-grid">
+              {results.map(u => (
+                <div className="card peer-card" key={u._id}>
+                  <div className="peer-card-header">
+                    <Avatar name={u.name} size={48} />
+                    <div style={{ flex: 1 }}>
+                      <Link to={`/user/${u._id}`} className="card-name">
+                        {u.name}
+                      </Link>
+                      <div>
+                        <Stars value={u.averageRating || 0} count={u.totalRatings} />
+                      </div>
+                    </div>
+                  </div>
+
+                  {u.bio && <p className="peer-bio">{u.bio}</p>}
+
+                  <div className="peer-skills-section">
+                    <div className="skills-group">
+                      <span className="skills-label">Teaches:</span>
+                      <div className="tag-list">
+                        {(u.skillsOffered || []).map((s, idx) => (
+                          <span className="tag" key={idx}>
+                            {s.skill} <small style={{ opacity: 0.7 }}>({s.level})</small>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+
+                    {u.skillsWanted?.length > 0 && (
+                      <div className="skills-group" style={{ marginTop: '.5rem' }}>
+                        <span className="skills-label">Wants:</span>
+                        <div className="tag-list">
+                          {u.skillsWanted.map((s, idx) => (
+                            <span className="tag tag-wanted" key={idx}>
+                              {s.skill}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="peer-card-footer">
+                    <button
+                      className="btn btn-primary btn-sm btn-block"
+                      onClick={() => setSwapTarget({ user: u })}
+                    >
+                      Propose Swap
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
-          <div className="card-list">
-            {matches.map(m => (
-              <div className="card" key={m.user._id}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Link to={`/user/${m.user._id}`} className="card-name">{m.user.name}</Link>
-                  <Stars value={m.user.averageRating} count={m.user.totalRatings} />
+        </div>
+      ) : (
+        /* Ranked Matches Grid */
+        <div style={{ marginTop: '1rem' }}>
+          {filteredMatches.length === 0 ? (
+            <div className="empty-card">
+              <div className="empty-icon">🎯</div>
+              <h3>No matches in this category</h3>
+              <p style={{ maxWidth: 460, margin: '.5rem auto 1.5rem', color: 'var(--text-muted)' }}>
+                {matches.length === 0
+                  ? 'Add skills you want to learn in your profile to let our matching algorithm find peers for you.'
+                  : 'Try selecting "All" or switching filters to see other compatible peers.'}
+              </p>
+              {matches.length === 0 && (
+                <Link to="/profile" className="btn btn-primary shadow-glow">
+                  Add Skills to Profile →
+                </Link>
+              )}
+            </div>
+          ) : (
+            <div className="card-grid">
+              {filteredMatches.map(m => (
+                <div className="card peer-card" key={m.user._id}>
+                  <div className="peer-card-header">
+                    <Avatar name={m.user.name} size={48} />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Link to={`/user/${m.user._id}`} className="card-name">
+                          {m.user.name}
+                        </Link>
+                        {m.availabilityOverlap === true && (
+                          <span className="badge badge-green" title="Your free hours align">
+                            ⏰ Available
+                          </span>
+                        )}
+                      </div>
+                      <Stars value={m.user.averageRating || 0} count={m.user.totalRatings} />
+                    </div>
+                  </div>
+
+                  {m.user.bio && <p className="peer-bio">{m.user.bio}</p>}
+
+                  {/* Compatibility Progress Bar */}
+                  <CompatBar score={m.compatibilityScore} note={m.compatibilityNote} />
+
+                  {/* Skills tags */}
+                  <div className="peer-skills-section">
+                    <div className="skills-group">
+                      <span className="skills-label">Teaches:</span>
+                      <div className="tag-list">
+                        {(m.user.skillsOffered || []).map((s, idx) => (
+                          <span className="tag" key={idx}>
+                            {s.skill} <small style={{ opacity: 0.7 }}>({s.level})</small>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+
+                    {m.user.skillsWanted?.length > 0 && (
+                      <div className="skills-group" style={{ marginTop: '.5rem' }}>
+                        <span className="skills-label">Wants:</span>
+                        <div className="tag-list">
+                          {m.user.skillsWanted.map((s, idx) => (
+                            <span className="tag tag-wanted" key={idx}>
+                              {s.skill}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="peer-card-footer">
+                    <button
+                      className="btn btn-primary btn-block shadow-glow"
+                      onClick={() => setSwapTarget(m)}
+                    >
+                      ⚡ Request Swap
+                    </button>
+                  </div>
                 </div>
-                {m.user.bio && <p style={{ fontSize: '.85rem', color: 'var(--text-muted)', margin: '.4rem 0' }}>{m.user.bio}</p>}
-                <CompatBar score={m.compatibilityScore} note={m.compatibilityNote} />
-                <p style={{ fontSize: '.85rem', marginTop: '.4rem' }}>
-                  <strong>Teaches:</strong> {(m.user.skillsOffered || []).map(s => `${s.skill} (${s.level})`).join(', ')}
-                </p>
-                {m.user.skillsWanted?.length > 0 && (
-                  <p style={{ fontSize: '.85rem' }}>
-                    <strong>Wants:</strong> {m.user.skillsWanted.map(s => s.skill).join(', ')}
-                  </p>
-                )}
-                {m.availabilityOverlap === true && <span className="badge badge-green">⏰ Schedule overlaps!</span>}
-                {m.availabilityOverlap === false && <span className="badge badge-yellow">⏰ No schedule overlap</span>}
-                <div style={{ marginTop: '.75rem' }}>
-                  <button className="btn btn-accent btn-sm" onClick={() => setSwapTarget(m)}>Request Swap</button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </>
+              ))}
+            </div>
+          )}
+        </div>
       )}
 
       {/* Swap Modal */}
-      {swapTarget && <SwapModal match={swapTarget} onClose={() => setSwapTarget(null)} />}
+      {swapTarget && (
+        <SwapModal
+          match={swapTarget}
+          onClose={() => setSwapTarget(null)}
+        />
+      )}
     </div>
   )
 }

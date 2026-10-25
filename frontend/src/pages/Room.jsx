@@ -1,25 +1,58 @@
-import { useParams } from 'react-router-dom'
+import { useState } from 'react'
+import { useParams, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { useToast } from '../context/ToastContext'
 
 export default function Room() {
   const { roomId } = useParams()
   const { user }   = useAuth()
+  const { addToast } = useToast()
+  const [copied, setCopied] = useState(false)
 
-  // Jitsi Meet free public server — no account needed
-  const jitsiUrl = `https://meet.jit.si/${roomId}#userInfo.displayName="${encodeURIComponent(user?.name || 'User')}"`
+  // Jitsi Meet free public room URL
+  const jitsiUrl = `https://meet.jit.si/${roomId}#userInfo.displayName="${encodeURIComponent(user?.name || 'Peer')}"`
+
+  function copyMeetingLink() {
+    navigator.clipboard.writeText(window.location.href)
+    setCopied(true)
+    addToast('Video session link copied to clipboard! 📋', 'success')
+    setTimeout(() => setCopied(false), 3000)
+  }
 
   return (
-    <div className="page" style={{ padding: 0 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem 1.5rem', background: 'var(--surface)' }}>
-        <h3 style={{ margin: 0 }}>🎥 Video Session</h3>
-        <span style={{ fontSize: '.85rem', color: 'var(--text-muted)' }}>Room: {roomId}</span>
+    <div className="room-container">
+      {/* Room Toolbar */}
+      <div className="room-top-bar">
+        <div className="room-left">
+          <Link to="/swaps" className="btn btn-muted btn-sm">
+            ← Exit Session
+          </Link>
+          <div className="room-title-info">
+            <span className="room-live-dot"></span>
+            <strong>Live Skill Barter Session</strong>
+            <span className="room-id-tag">Room: {roomId}</span>
+          </div>
+        </div>
+
+        <div className="room-right">
+          <button className="btn btn-ghost btn-sm" onClick={copyMeetingLink}>
+            {copied ? '✓ Link Copied' : '🔗 Copy Session Link'}
+          </button>
+          <Link to="/swaps" className="btn btn-primary btn-sm">
+            End & Return to Swaps
+          </Link>
+        </div>
       </div>
-      <iframe
-        src={jitsiUrl}
-        title="Jitsi Video Call"
-        style={{ width: '100%', height: 'calc(100vh - 120px)', border: 'none' }}
-        allow="camera; microphone; fullscreen; display-capture"
-      />
+
+      {/* Embedded Jitsi WebRTC frame */}
+      <div className="room-frame-wrapper">
+        <iframe
+          src={jitsiUrl}
+          title="Jitsi Video Session"
+          className="jitsi-iframe"
+          allow="camera; microphone; fullscreen; display-capture; autoplay"
+        />
+      </div>
     </div>
   )
 }

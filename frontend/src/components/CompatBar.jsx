@@ -1,10 +1,27 @@
 export default function CompatBar({ score = 0, note = '' }) {
-  const color = score >= 70 ? '#10b981' : score >= 40 ? '#6366f1' : '#f59e0b'
+  const isHigh = score >= 70
+  const isMedium = score >= 40
+  const color = isHigh ? '#10b981' : isMedium ? '#6366f1' : '#f59e0b'
+  const badgeLabel = isHigh ? '⚡ Strong Match' : isMedium ? 'Good Match' : 'Potential Match'
+
   return (
     <div className="compat-bar">
-      <div className="compat-label"><span>Compatibility</span><span style={{color}}>{score}%</span></div>
-      <div className="compat-track"><div className="compat-fill" style={{width:`${score}%`,background:color}} /></div>
-      {note && <p style={{fontSize:'.75rem',color:'var(--text-muted)',marginTop:'.3rem'}}>{note}</p>}
+      <div className="compat-label">
+        <span className="compat-badge" style={{ color, borderColor: `${color}40`, background: `${color}12` }}>
+          {badgeLabel}
+        </span>
+        <span className="compat-score-text" style={{ color }}>{score}% Match</span>
+      </div>
+      <div className="compat-track">
+        <div
+          className="compat-fill"
+          style={{
+            width: `${score}%`,
+            background: `linear-gradient(90deg, ${color}, ${isHigh ? '#34d399' : '#818cf8'})`
+          }}
+        />
+      </div>
+      {note && <p className="compat-note">{note}</p>}
     </div>
   )
 }
