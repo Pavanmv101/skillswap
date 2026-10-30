@@ -5,6 +5,7 @@ import { useToast } from '../context/ToastContext'
 import Spinner from '../components/Spinner'
 import Avatar from '../components/Avatar'
 import AvailabilityCalendar from '../components/AvailabilityCalendar'
+import VerificationModal from '../components/VerificationModal'
 
 const CATEGORIES = ['General', 'Programming', 'Design', 'Music', 'Language', 'Sports', 'Academic', 'Business', 'Other']
 const LEVELS     = ['Beginner', 'Intermediate', 'Advanced']
@@ -24,27 +25,45 @@ export default function Profile() {
   const [skillsWanted,  setSkillsWanted]  = useState([])
   const [slots,         setSlots]         = useState([])
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const { data } = await api.get('/profile')
-        setName(data.name || '')
-        setBio(data.bio   || '')
-        setSkillsOffered(data.skillsOffered || [])
-        setSkillsWanted(data.skillsWanted   || [])
-        setSlots(data.availabilitySlots     || [])
-      } catch (err) {
-        setError('Failed to load profile')
-      } finally {
-        setLoading(false)
+  // Phase 3: Verification & Endorsement state
+  const [myVerifications, setMyVerifications] = useState([])
+  const [myEndorsements,  setMyEndorsements]  = useState([])
+  const [verifyModalOpen, setVerifyModalOpen] = useState(false)
+  const [selectedSkill,   setSelectedSkill]   = useState(null)
+
+  async function loadProfileAndTrustData() {
+    try {
+      const [profRes, verifRes] = await Promise.all([
+        api.get('/profile'),
+        api.get('/verification/my').catch(() => ({ data: [] })),
+      ])
+      const data = profRes.data
+      setName(data.name || '')
+      setBio(data.bio   || '')
+      setSkillsOffered(data.skillsOffered || [])
+      setSkillsWanted(data.skillsWanted   || [])
+      setSlots(data.availabilitySlots     || [])
+      setMyVerifications(verifRes.data || [])
+
+      const userId = data._id || user?.id
+      if (userId) {
+        const endRes = await api.get(`/endorsements/${userId}`).catch(() => ({ data: { endorsements: [] } }))
+        setMyEndorsements(endRes.data?.endorsements || (Array.isArray(endRes.data) ? endRes.data : []))
       }
+    } catch (err) {
+      setError('Failed to load profile')
+    } finally {
+      setLoading(false)
     }
-    load()
+  }
+
+  useEffect(() => {
+    loadProfileAndTrustData()
   }, [])
 
   // ── Offered skills helpers ───────────────────────
   function addOffered() {
-    setSkillsOffered([...skillsOffered, { skill: '', category: 'Programming', level: 'Intermediate' }])
+    setSkillsOffered([...skillsOffered, { skill: '', category: 'Programming', level: 'Intermediate', verified: false }])
   }
   function updateOffered(i, field, val) {
     const copy = [...skillsOffered]
@@ -79,6 +98,28 @@ export default function Profile() {
   }
   function removeSlot(i) {
     setSlots(slots.filter((_, idx) => idx !== i))
+  }
+
+  // ── Verification modal trigger ───────────────────
+  function handleOpenVerification(skillObj) {
+    if (!skillObj.skill?.trim()) {
+      addToast('Please name the skill and save before requesting verification', 'warning')
+      return
+    }
+    setSelectedSkill(skillObj)
+    setVerifyModalOpen(true)
+  }
+
+  // Helper to count peer endorsements for a skill
+  function getEndorsementCount(skillName) {
+    if (!skillName) return 0
+    return myEndorsements.filter(e => e.skillName?.toLowerCase() === skillName.toLowerCase()).length
+  }
+
+  // Helper to find latest verification for a skill
+  function getSkillVerification(skillName) {
+    if (!skillName) return null
+    return myVerifications.find(v => v.skillName?.toLowerCase() === skillName.toLowerCase())
   }
 
   // ── Save ─────────────────────────────────────────
@@ -127,12 +168,12 @@ export default function Profile() {
   if (loading) return <Spinner message="Loading your profile…" />
 
   return (
-    <div className="page" style={{ maxWidth: 760 }}>
+    <div className="page" style={{ maxWidth: 780 }}>
       <div className="page-header-flex">
         <div>
           <h2 className="page-title">Edit Your Profile</h2>
           <p className="page-sub">
-            Keep your skills and availability updated so peers can discover and match with you.
+            Keep your skills, verified credentials, and availability updated so peers can discover and match with you.
           </p>
         </div>
       </div>
@@ -193,39 +234,102 @@ export default function Profile() {
                 No teaching skills added yet. Click "+ Add Skill" to add your first one.
               </p>
             ) : (
-              skillsOffered.map((s, i) => (
-                <div className="skill-row" key={i}>
-                  <input
-                    className="form-input"
-                    placeholder="e.g. React, Python, UI/UX"
-                    value={s.skill}
-                    onChange={e => updateOffered(i, 'skill', e.target.value)}
-                    required
-                  />
-                  <select
-                    className="form-select"
-                    value={s.category}
-                    onChange={e => updateOffered(i, 'category', e.target.value)}
-                  >
-                    {CATEGORIES.map(c => <option key={c}>{c}</option>)}
-                  </select>
-                  <select
-                    className="form-select"
-                    value={s.level}
-                    onChange={e => updateOffered(i, 'level', e.target.value)}
-                  >
-                    {LEVELS.map(l => <option key={l}>{l}</option>)}
-                  </select>
-                  <button
-                    type="button"
-                    className="btn btn-danger btn-sm"
-                    title="Remove skill"
-                    onClick={() => removeOffered(i)}
-                  >
-                    ✕
-                  </button>
-                </div>
-              ))
+              skillsOffered.map((s, i) => {
+                const verif = getSkillVerification(s.skill)
+                const endCount = getEndorsementCount(s.skill)
+                const isVerified = s.verified || verif?.status === 'verified'
+
+                return (
+                  <div key={i} className="skill-edit-card" style={{ marginBottom: '1rem', padding: '.85rem', background: 'rgba(255,255,255,0.02)', borderRadius: 10, border: '1px solid var(--border-color)' }}>
+                    <div className="skill-row" style={{ marginBottom: '.5rem' }}>
+                      <input
+                        className="form-input"
+                        placeholder="e.g. React, Python, UI/UX"
+                        value={s.skill}
+                        onChange={e => updateOffered(i, 'skill', e.target.value)}
+                        required
+                      />
+                      <select
+                        className="form-select"
+                        value={s.category}
+                        onChange={e => updateOffered(i, 'category', e.target.value)}
+                      >
+                        {CATEGORIES.map(c => <option key={c}>{c}</option>)}
+                      </select>
+                      <select
+                        className="form-select"
+                        value={s.level}
+                        onChange={e => updateOffered(i, 'level', e.target.value)}
+                      >
+                        {LEVELS.map(l => <option key={l}>{l}</option>)}
+                      </select>
+                      <button
+                        type="button"
+                        className="btn btn-danger btn-sm"
+                        title="Remove skill"
+                        onClick={() => removeOffered(i)}
+                      >
+                        ✕
+                      </button>
+                    </div>
+
+                    {/* Trust & Verification Badges Bar for this skill */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '.5rem', paddingTop: '.35rem', borderTop: '1px dashed rgba(255,255,255,0.06)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem' }}>
+                        {isVerified ? (
+                          <span className="badge badge-verified" title="Skill officially verified by SkillSwap administrator">
+                            ✓ Verified
+                          </span>
+                        ) : verif?.status === 'pending' ? (
+                          <span className="badge badge-pending" title="Your verification application is currently under admin review">
+                            ⏳ Under Review
+                          </span>
+                        ) : verif?.status === 'rejected' ? (
+                          <span className="badge badge-rejected" title={verif.rejectionReason || 'Application rejected'}>
+                            ✕ Rejected
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: '.78rem', color: 'var(--text-muted)' }}>
+                            Not verified yet
+                          </span>
+                        )}
+
+                        {endCount > 0 && (
+                          <span className="endorsement-pill" title={`${endCount} peer endorsement(s) received from completed swaps`}>
+                            ★ {endCount} {endCount === 1 ? 'Endorsement' : 'Endorsements'}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Verification Action Buttons */}
+                      <div>
+                        {isVerified ? (
+                          <span style={{ fontSize: '.78rem', color: '#10b981' }}>Credibility active</span>
+                        ) : verif?.status === 'pending' ? (
+                          <span style={{ fontSize: '.78rem', color: '#f59e0b' }}>Awaiting admin review</span>
+                        ) : verif?.status === 'rejected' ? (
+                          <button
+                            type="button"
+                            className="btn btn-outline btn-xs"
+                            onClick={() => handleOpenVerification(s)}
+                            style={{ borderColor: '#ef4444', color: '#ef4444' }}
+                          >
+                            Resubmit Evidence ↻
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="btn btn-outline btn-xs"
+                            onClick={() => handleOpenVerification(s)}
+                          >
+                            🛡️ Request Verification
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })
             )}
           </div>
         </div>
@@ -358,6 +462,77 @@ export default function Profile() {
           </button>
         </div>
       </form>
+
+      {/* Verification Applications History Section */}
+      {myVerifications.length > 0 && (
+        <div className="card" style={{ marginTop: '1.5rem' }}>
+          <h3 style={{ margin: '0 0 .5rem', fontSize: '1.05rem' }}>🛡️ My Skill Verification Applications</h3>
+          <p style={{ margin: '0 0 1rem', fontSize: '.82rem', color: 'var(--text-muted)' }}>
+            Track the status of your submitted credentials, GitHub projects, and certificates reviewed by administrators.
+          </p>
+
+          <div className="card-list">
+            {myVerifications.map(v => (
+              <div key={v._id} className="verification-history-card" style={{ padding: '.9rem', background: 'rgba(255,255,255,0.02)', borderRadius: 8, border: '1px solid var(--border-color)', marginBottom: '.75rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '.5rem' }}>
+                  <div>
+                    <strong style={{ fontSize: '1rem', color: 'var(--text-color)' }}>{v.skillName}</strong>
+                    <span style={{ marginLeft: '.5rem', fontSize: '.75rem', padding: '2px 8px', borderRadius: 4, background: 'rgba(255,255,255,0.06)' }}>
+                      {v.category}
+                    </span>
+                    <span style={{ marginLeft: '.5rem', fontSize: '.75rem', color: 'var(--text-muted)' }}>
+                      Evidence: {v.evidenceType}
+                    </span>
+                  </div>
+                  <div>
+                    {v.status === 'verified' && <span className="badge badge-verified">✓ Approved</span>}
+                    {v.status === 'pending' && <span className="badge badge-pending">⏳ Pending Review</span>}
+                    {v.status === 'rejected' && <span className="badge badge-rejected">✕ Rejected</span>}
+                  </div>
+                </div>
+
+                {v.description && (
+                  <p style={{ margin: '.4rem 0', fontSize: '.84rem', color: 'var(--text-muted)' }}>
+                    {v.description}
+                  </p>
+                )}
+
+                {v.status === 'rejected' && v.rejectionReason && (
+                  <div style={{ marginTop: '.5rem', padding: '.6rem .75rem', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 6, fontSize: '.82rem', color: '#ef4444' }}>
+                    <strong>Admin Feedback:</strong> {v.rejectionReason}
+                    <div style={{ marginTop: '.4rem' }}>
+                      <button
+                        type="button"
+                        className="btn btn-outline btn-xs"
+                        onClick={() => handleOpenVerification({ skill: v.skillName, category: v.category })}
+                        style={{ borderColor: '#ef4444', color: '#ef4444' }}
+                      >
+                        Resubmit Application ↻
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div style={{ fontSize: '.72rem', color: 'var(--text-muted)', marginTop: '.5rem' }}>
+                  Submitted on {new Date(v.createdAt).toLocaleDateString([], { dateStyle: 'medium' })}
+                  {v.reviewedAt && ` • Reviewed on ${new Date(v.reviewedAt).toLocaleDateString([], { dateStyle: 'medium' })}`}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Verification Evidence Submission Modal */}
+      <VerificationModal
+        isOpen={verifyModalOpen}
+        skill={selectedSkill}
+        onClose={() => setVerifyModalOpen(false)}
+        onSuccess={() => {
+          loadProfileAndTrustData()
+          addToast('Verification evidence submitted successfully for admin review! 🛡️', 'success')
+        }}
+      />
     </div>
   )
 }

@@ -13,6 +13,9 @@ const matchRoutes = require('./routes/matchRoutes');
 const swapRoutes = require('./routes/swapRoutes');
 const ratingRoutes = require('./routes/ratingRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
+const verificationRoutes = require('./routes/verificationRoutes');
+const adminRoutes = require('./routes/adminRoutes');
+const endorsementRoutes = require('./routes/endorsementRoutes');
 
 // Import notification and reminder services
 const { setIO } = require('./services/notificationService');
@@ -54,7 +57,7 @@ io.use((socket, next) => {
 connectDB();
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
 // Mount API routes
 app.use('/api/auth', authRoutes);
@@ -63,6 +66,9 @@ app.use('/api/match', matchRoutes);
 app.use('/api/swap', swapRoutes);
 app.use('/api/rating', ratingRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/verification', verificationRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/endorsements', endorsementRoutes);
 
 // Real-time Event Handlers
 io.on('connection', (socket) => {

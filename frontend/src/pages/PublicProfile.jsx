@@ -5,6 +5,7 @@ import Spinner from '../components/Spinner'
 import Stars from '../components/Stars'
 import Avatar from '../components/Avatar'
 import SwapModal from '../components/SwapModal'
+import EndorsementModal from '../components/EndorsementModal'
 import AvailabilityCalendar from '../components/AvailabilityCalendar'
 import { useToast } from '../context/ToastContext'
 
@@ -14,30 +15,35 @@ export default function PublicProfile() {
   const [profile, setProfile] = useState(null)
   const [myProfile, setMyProfile] = useState(null)
   const [ratings, setRatings] = useState([])
+  const [endorsements, setEndorsements] = useState([])
   const [loading, setLoading] = useState(true)
   const [swapModalOpen, setSwapModalOpen] = useState(false)
+  const [endorseModalOpen, setEndorseModalOpen] = useState(false)
   const [blockModalOpen, setBlockModalOpen] = useState(false)
   const [blocking, setBlocking] = useState(false)
   const [error, setError] = useState('')
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const [profileRes, ratingsRes, myProfileRes] = await Promise.all([
-          api.get(`/profile/${id}`),
-          api.get(`/rating/user/${id}`),
-          api.get('/profile').catch(() => ({ data: null })),
-        ])
-        setProfile(profileRes.data)
-        setRatings(ratingsRes.data || [])
-        setMyProfile(myProfileRes?.data)
-      } catch (err) {
-        setError('User profile not found')
-      } finally {
-        setLoading(false)
-      }
+  async function loadData() {
+    try {
+      const [profileRes, ratingsRes, myProfileRes, endorsementsRes] = await Promise.all([
+        api.get(`/profile/${id}`),
+        api.get(`/rating/user/${id}`),
+        api.get('/profile').catch(() => ({ data: null })),
+        api.get(`/endorsements/${id}`).catch(() => ({ data: [] })),
+      ])
+      setProfile(profileRes.data)
+      setRatings(ratingsRes.data || [])
+      setMyProfile(myProfileRes?.data)
+      setEndorsements(endorsementsRes.data?.endorsements || (Array.isArray(endorsementsRes.data) ? endorsementsRes.data : []))
+    } catch (err) {
+      setError('User profile not found')
+    } finally {
+      setLoading(false)
     }
-    load()
+  }
+
+  useEffect(() => {
+    loadData()
   }, [id])
 
   async function handleConfirmBlock() {
@@ -53,6 +59,12 @@ export default function PublicProfile() {
     }
   }
 
+  // Count endorsements for a specific skill
+  function getSkillEndorsementCount(skillName) {
+    if (!skillName) return 0
+    return endorsements.filter(e => e.skillName?.toLowerCase() === skillName.toLowerCase()).length
+  }
+
   if (loading) return <Spinner message="Loading user profile…" />
   if (error) {
     return (
@@ -62,6 +74,8 @@ export default function PublicProfile() {
       </div>
     )
   }
+
+  const isSelf = myProfile && (myProfile._id === profile._id || myProfile.id === profile._id)
 
   return (
     <div className="page" style={{ maxWidth: 740 }}>
@@ -81,25 +95,49 @@ export default function PublicProfile() {
               <span style={{ fontSize: '.82rem', color: 'var(--text-muted)' }}>
                 Member since {new Date(profile.createdAt).toLocaleDateString([], { month: 'short', year: 'numeric' })}
               </span>
+              {endorsements.length > 0 && (
+                <>
+                  <span style={{ color: 'var(--text-muted)', fontSize: '.8rem' }}>•</span>
+                  <span style={{ fontSize: '.82rem', color: '#f59e0b', fontWeight: 600 }}>
+                    ★ {endorsements.length} Peer {endorsements.length === 1 ? 'Endorsement' : 'Endorsements'}
+                  </span>
+                </>
+              )}
             </div>
             {profile.bio && <p className="public-bio">{profile.bio}</p>}
           </div>
         </div>
 
         <div className="public-actions-bar">
-          <button
-            className="btn btn-primary btn-md shadow-glow"
-            onClick={() => setSwapModalOpen(true)}
-          >
-            ⚡ Propose Skill Swap
-          </button>
-          <button
-            className="btn btn-muted btn-sm"
-            onClick={() => setBlockModalOpen(true)}
-            title="Block user from matches"
-          >
-            Block User
-          </button>
+          {!isSelf && (
+            <>
+              <button
+                className="btn btn-primary btn-md shadow-glow"
+                onClick={() => setSwapModalOpen(true)}
+              >
+                ⚡ Propose Skill Swap
+              </button>
+              <button
+                className="btn btn-outline btn-md"
+                onClick={() => setEndorseModalOpen(true)}
+                title="Endorse a skill taught by this peer after completing an exchange"
+              >
+                ⭐ Endorse Skill
+              </button>
+              <button
+                className="btn btn-muted btn-sm"
+                onClick={() => setBlockModalOpen(true)}
+                title="Block user from matches"
+              >
+                Block User
+              </button>
+            </>
+          )}
+          {isSelf && (
+            <Link to="/profile" className="btn btn-primary btn-sm">
+              Edit My Profile →
+            </Link>
+          )}
         </div>
       </div>
 
@@ -108,11 +146,25 @@ export default function PublicProfile() {
         <h3 style={{ margin: '0 0 .75rem', fontSize: '1.05rem' }}>📚 Skills They Teach</h3>
         {profile.skillsOffered?.length > 0 ? (
           <div className="tag-list">
-            {profile.skillsOffered.map((s, i) => (
-              <span className="tag" key={i}>
-                {s.skill} <small style={{ opacity: 0.7 }}>({s.level})</small>
-              </span>
-            ))}
+            {profile.skillsOffered.map((s, i) => {
+              const endCount = getSkillEndorsementCount(s.skill)
+              return (
+                <span className="tag" key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '.4rem' }}>
+                  <span>{s.skill}</span>
+                  <small style={{ opacity: 0.7 }}>({s.level})</small>
+                  {s.verified && (
+                    <span className="badge-verified-inline" title="Skill officially verified by SkillSwap administrator">
+                      ✓ Verified
+                    </span>
+                  )}
+                  {endCount > 0 && (
+                    <span className="endorsement-pill" title={`${endCount} peer endorsement(s) received`}>
+                      ★ {endCount}
+                    </span>
+                  )}
+                </span>
+              )
+            })}
           </div>
         ) : (
           <p style={{ color: 'var(--text-muted)', fontSize: '.88rem' }}>No skills listed</p>
@@ -143,11 +195,49 @@ export default function PublicProfile() {
         )}
       </div>
 
+      {/* Peer Skill Endorsements Section */}
+      {endorsements.length > 0 && (
+        <div className="card" style={{ marginTop: '1.5rem' }}>
+          <div className="section-title-row">
+            <h3 style={{ margin: 0, fontSize: '1.05rem' }}>
+              🛡️ Verified Peer Endorsements ({endorsements.length})
+            </h3>
+            <span style={{ fontSize: '.82rem', color: '#10b981' }}>
+              From verified barter swap completions
+            </span>
+          </div>
+
+          <div className="card-list" style={{ marginTop: '1rem' }}>
+            {endorsements.map(e => (
+              <div key={e._id} className="endorsement-card" style={{ padding: '.85rem', background: 'rgba(255,255,255,0.02)', borderRadius: 8, border: '1px solid var(--border-color)', marginBottom: '.75rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem' }}>
+                    <Avatar name={e.endorser?.name} size={30} />
+                    <strong>{e.endorser?.name || 'Peer Student'}</strong>
+                  </div>
+                  <span className="badge badge-green" style={{ fontSize: '.75rem' }}>
+                    ★ Endorsed: {e.skillName}
+                  </span>
+                </div>
+                {e.comment && (
+                  <p style={{ margin: '.45rem 0 .25rem', fontSize: '.84rem', color: 'var(--text-color)', fontStyle: 'italic' }}>
+                    "{e.comment}"
+                  </p>
+                )}
+                <div style={{ fontSize: '.72rem', color: 'var(--text-muted)', marginTop: '.3rem' }}>
+                  {new Date(e.createdAt).toLocaleDateString([], { dateStyle: 'medium' })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Reviews Section */}
       <div className="card" style={{ marginTop: '1.5rem' }}>
         <div className="section-title-row">
           <h3 style={{ margin: 0, fontSize: '1.05rem' }}>
-            ⭐ Peer Reviews & Endorsements ({ratings.length})
+            ⭐ Peer Reviews ({ratings.length})
           </h3>
           <span style={{ fontSize: '.85rem', color: 'var(--text-muted)' }}>
             Average: {profile.averageRating ? profile.averageRating.toFixed(1) : '0.0'} / 5.0
@@ -191,6 +281,17 @@ export default function PublicProfile() {
         <SwapModal
           match={{ user: profile, compatibilityScore: 0, compatibilityNote: 'Direct swap proposal' }}
           onClose={() => setSwapModalOpen(false)}
+        />
+      )}
+
+      {/* Peer Skill Endorsement Modal */}
+      {endorseModalOpen && (
+        <EndorsementModal
+          partner={profile}
+          onClose={() => setEndorseModalOpen(false)}
+          onSuccess={() => {
+            loadData()
+          }}
         />
       )}
 

@@ -13,10 +13,18 @@ import Swaps         from './pages/Swaps'
 import Room          from './pages/Room'
 import PublicProfile from './pages/PublicProfile'
 import Notifications from './pages/Notifications'
+import AdminVerifications from './pages/AdminVerifications'
 
 function PrivateRoute({ children }) {
   const { token } = useAuth()
   return token ? children : <Navigate to="/login" replace />
+}
+
+function AdminRoute({ children }) {
+  const { token, user } = useAuth()
+  if (!token) return <Navigate to="/login" replace />
+  if (user?.role !== 'admin') return <Navigate to="/dashboard" replace />
+  return children
 }
 
 export default function App() {
@@ -38,6 +46,7 @@ export default function App() {
                 <Route path="/room/:roomId"   element={<PrivateRoute><Room /></PrivateRoute>} />
                 <Route path="/user/:id"       element={<PrivateRoute><PublicProfile /></PrivateRoute>} />
                 <Route path="/notifications"  element={<PrivateRoute><Notifications /></PrivateRoute>} />
+                <Route path="/admin"          element={<AdminRoute><AdminVerifications /></AdminRoute>} />
                 <Route path="*"               element={<Navigate to="/" replace />} />
               </Routes>
             </main>

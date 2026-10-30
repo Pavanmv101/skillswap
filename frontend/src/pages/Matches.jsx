@@ -250,7 +250,10 @@ export default function Matches() {
                       <span className="skills-label">Teaches:</span>
                       <div className="tag-list">
                         {(u.skillsOffered || []).map((s, idx) => (
-                          <span className="tag" key={idx}>{s.skill} <small style={{ opacity: 0.7 }}>({s.level})</small></span>
+                          <span className="tag" key={idx}>
+                            {s.skill} <small style={{ opacity: 0.7 }}>({s.level})</small>
+                            {s.verified && <span className="badge-verified-inline" title="Skill Verified">✓</span>}
+                          </span>
                         ))}
                       </div>
                     </div>
@@ -351,6 +354,9 @@ export default function Matches() {
                           {(m.user.skillsOffered || []).map((s, idx) => (
                             <span className="tag" key={idx}>
                               {s.skill} <small style={{ opacity: 0.7 }}>({s.level})</small>
+                              {s.verified && (
+                                <span className="badge-verified-inline" title="Skill Verified by SkillSwap">✓ Verified</span>
+                              )}
                             </span>
                           ))}
                         </div>

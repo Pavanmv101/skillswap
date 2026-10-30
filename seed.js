@@ -6,6 +6,8 @@ const User = require('./models/User');
 const SwapRequest = require('./models/SwapRequest');
 const Rating = require('./models/Rating');
 const Notification = require('./models/Notification');
+const SkillVerification = require('./models/SkillVerification');
+const Endorsement = require('./models/Endorsement');
 
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/skillswap';
 
@@ -90,6 +92,17 @@ const demoUsers = [
       { day: 'Sunday', from: '15:00', to: '19:00' }
     ],
     credits: 12
+  },
+  {
+    name: 'Administrator',
+    email: 'admin@skillswap.com',
+    password: 'password123',
+    role: 'admin',
+    bio: 'Platform Administrator & Skill Verification Officer.',
+    skillsOffered: [],
+    skillsWanted: [],
+    availabilitySlots: [],
+    credits: 999
   }
 ];
 
@@ -106,9 +119,11 @@ async function seed() {
     if (userIds.length > 0) {
       await Rating.deleteMany({ $or: [{ rater: { $in: userIds } }, { ratee: { $in: userIds } }] });
       await Notification.deleteMany({ $or: [{ recipient: { $in: userIds } }, { sender: { $in: userIds } }] });
+      await Endorsement.deleteMany({ $or: [{ endorser: { $in: userIds } }, { recipient: { $in: userIds } }] });
+      await SkillVerification.deleteMany({ user: { $in: userIds } });
       await SwapRequest.deleteMany({ $or: [{ fromUser: { $in: userIds } }, { toUser: { $in: userIds } }] });
       await User.deleteMany({ _id: { $in: userIds } });
-      console.log(`Cleaned up ${userIds.length} existing demo users and associated swaps/ratings/notifications`);
+      console.log(`Cleaned up ${userIds.length} existing demo users and associated swaps/ratings/notifications/verifications`);
     }
 
     // Insert demo users with hashed passwords
@@ -130,6 +145,7 @@ async function seed() {
     const priya = createdUsers.find(u => u.email === 'priya@skillswap.com');
     const rohan = createdUsers.find(u => u.email === 'rohan@skillswap.com');
     const sneha = createdUsers.find(u => u.email === 'sneha@skillswap.com');
+    const admin = createdUsers.find(u => u.email === 'admin@skillswap.com');
 
     // 1. COMPLETED SWAP: Aarav <-> Priya (with mutual 5-star ratings)
     const completedSwap = new SwapRequest({
@@ -271,6 +287,58 @@ async function seed() {
       relatedSwap: pendingSentSwap._id,
       isRead: false,
       createdAt: new Date(Date.now() - 7200000),
+    }).save();
+
+    // 7. DEMO SKILL VERIFICATIONS
+    // Aarav: React verified by Administrator
+    const aaravVerification = new SkillVerification({
+      user: aarav._id,
+      skillName: 'React',
+      category: 'Programming',
+      evidenceType: 'github',
+      evidenceUrl: 'https://github.com/aaravsharma/production-react-apps',
+      description: 'Built enterprise-grade React 18 applications using custom hooks, Suspense, and performance profiling.',
+      status: 'verified',
+      reviewedBy: admin._id,
+      reviewedAt: new Date(Date.now() - 86400000 * 3),
+    });
+    await aaravVerification.save();
+
+    // Mark React as verified on Aarav's user document
+    await User.updateOne(
+      { _id: aarav._id, 'skillsOffered.skill': 'React' },
+      { $set: { 'skillsOffered.$.verified': true } }
+    );
+
+    // Priya: Python pending verification review
+    const priyaVerification = new SkillVerification({
+      user: priya._id,
+      skillName: 'Python',
+      category: 'Programming',
+      evidenceType: 'github',
+      evidenceUrl: 'https://github.com/priyapatel/data-science-algorithms',
+      description: 'Developed Python computational pipelines, NumPy implementations, and Pandas data sanitization modules.',
+      status: 'pending',
+    });
+    await priyaVerification.save();
+
+    // 8. PEER SKILL ENDORSEMENTS (Following completed swap)
+    // Aarav endorses Priya for Python
+    await new Endorsement({
+      endorser: aarav._id,
+      recipient: priya._id,
+      skillName: 'Python',
+      swapRequest: completedSwap._id,
+      comment: 'Exceptional mastery of Python data structures and algorithm analysis.',
+    }).save();
+
+    // Priya endorses Aarav for React
+    await new Endorsement({
+      endorser: priya._id,
+      recipient: aarav._id,
+      skillName: 'React',
+      swapRequest: completedSwap._id,
+      comment: 'Superb React instructor. Explains state isolation and modern hooks effortlessly.',
     }).save();
 
     console.log('✅ Database seeded successfully with demo profiles, swaps across all statuses, and verified ratings!');

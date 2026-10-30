@@ -38,7 +38,20 @@ exports.updateProfile = async (req, res) => {
 
     if (name)               user.name               = name.trim();
     if (bio !== undefined)  user.bio                = bio.trim();
-    if (skillsOffered)      user.skillsOffered      = skillsOffered;
+    if (skillsOffered) {
+      // Security: Preserve verified status from existing skills if skill name matches.
+      // Prevent users from granting themselves verified status via PUT /profile.
+      const existingVerifiedMap = new Map();
+      (user.skillsOffered || []).forEach(s => {
+        existingVerifiedMap.set(s.skill.toLowerCase(), s.verified || false);
+      });
+      user.skillsOffered = skillsOffered.map(s => ({
+        skill: s.skill.trim(),
+        category: s.category || 'General',
+        level: s.level || 'Intermediate',
+        verified: existingVerifiedMap.get(s.skill.trim().toLowerCase()) || false,
+      }));
+    }
     if (skillsWanted)       user.skillsWanted       = skillsWanted;
     if (availability !== undefined) user.availability = availability;
     if (availabilitySlots)  user.availabilitySlots  = availabilitySlots;

@@ -45,6 +45,9 @@ const userSchema = new mongoose.Schema(
     averageRating: { type: Number, default: 0 },
     totalRatings:  { type: Number, default: 0 },
 
+    // Role-based access control
+    role:          { type: String, enum: ['student', 'admin'], default: 'student' },
+
     // Soft block list — user IDs this user has blocked
     blockedUsers:  [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   },

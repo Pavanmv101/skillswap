@@ -100,6 +100,11 @@ export default function Navbar() {
               <NavLink to="/profile" onClick={() => setMobileOpen(false)}>
                 Profile
               </NavLink>
+              {user?.role === 'admin' && (
+                <NavLink to="/admin" onClick={() => setMobileOpen(false)} style={{ color: '#ec4899', fontWeight: 600 }}>
+                  🛡️ Admin
+                </NavLink>
+              )}
             </div>
 
             <div className="navbar-right">
