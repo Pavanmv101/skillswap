@@ -5,6 +5,7 @@ require('dotenv').config();
 const User = require('./models/User');
 const SwapRequest = require('./models/SwapRequest');
 const Rating = require('./models/Rating');
+const Notification = require('./models/Notification');
 
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/skillswap';
 
@@ -104,9 +105,10 @@ async function seed() {
 
     if (userIds.length > 0) {
       await Rating.deleteMany({ $or: [{ rater: { $in: userIds } }, { ratee: { $in: userIds } }] });
+      await Notification.deleteMany({ $or: [{ recipient: { $in: userIds } }, { sender: { $in: userIds } }] });
       await SwapRequest.deleteMany({ $or: [{ fromUser: { $in: userIds } }, { toUser: { $in: userIds } }] });
       await User.deleteMany({ _id: { $in: userIds } });
-      console.log(`Cleaned up ${userIds.length} existing demo users and associated swaps/ratings`);
+      console.log(`Cleaned up ${userIds.length} existing demo users and associated swaps/ratings/notifications`);
     }
 
     // Insert demo users with hashed passwords
@@ -221,6 +223,55 @@ async function seed() {
     priya.averageRating = 5.0;
     priya.totalRatings = 1;
     await priya.save();
+
+    // 6. DEMO NOTIFICATIONS
+    // Notification for Aarav: Sneha sent swap request (unread)
+    await new Notification({
+      recipient: aarav._id,
+      sender: sneha._id,
+      type: 'SWAP_REQUEST',
+      title: 'New Skill Swap Request ⚡',
+      message: 'Sneha Kulkarni wants to swap skills: offering "Acoustic Guitar" in exchange for your "JavaScript".',
+      relatedSwap: pendingIncomingSwap._id,
+      isRead: false,
+      createdAt: new Date(Date.now() - 3600000), // 1 hour ago
+    }).save();
+
+    // Notification for Aarav: Rohan scheduled live session (unread)
+    await new Notification({
+      recipient: aarav._id,
+      sender: rohan._id,
+      type: 'SESSION_SCHEDULED',
+      title: 'Session Scheduled 📅',
+      message: 'Rohan Verma scheduled your video session for tomorrow.',
+      relatedSwap: acceptedSwap._id,
+      isRead: false,
+      createdAt: new Date(Date.now() - 1800000), // 30 mins ago
+    }).save();
+
+    // Notification for Aarav: Priya marked exchange as completed (read)
+    await new Notification({
+      recipient: aarav._id,
+      sender: priya._id,
+      type: 'SWAP_COMPLETED',
+      title: 'Swap Marked as Completed! ⭐',
+      message: 'Priya Patel marked your exchange as completed. Please write a review and leave an endorsement!',
+      relatedSwap: completedSwap._id,
+      isRead: true,
+      createdAt: new Date(Date.now() - 86400000), // yesterday
+    }).save();
+
+    // Notification for Priya: Aarav sent swap proposal (unread)
+    await new Notification({
+      recipient: priya._id,
+      sender: aarav._id,
+      type: 'SWAP_REQUEST',
+      title: 'New Skill Swap Request ⚡',
+      message: 'Aarav Sharma wants to swap skills: offering "Node.js" in exchange for your "Machine Learning".',
+      relatedSwap: pendingSentSwap._id,
+      isRead: false,
+      createdAt: new Date(Date.now() - 7200000),
+    }).save();
 
     console.log('✅ Database seeded successfully with demo profiles, swaps across all statuses, and verified ratings!');
     console.log('\nDemo User Accounts (all passwords: password123):');

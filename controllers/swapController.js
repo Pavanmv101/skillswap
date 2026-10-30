@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const SwapRequest = require('../models/SwapRequest');
 const User = require('../models/User');
+const { createAndEmitNotification } = require('../services/notificationService');
 
 // POST /api/swap
 exports.createSwapRequest = async (req, res) => {
@@ -69,6 +70,16 @@ exports.createSwapRequest = async (req, res) => {
     await swapRequest.populate('fromUser', 'name email averageRating availabilitySlots');
     await swapRequest.populate('toUser',   'name email averageRating availabilitySlots');
 
+    // Trigger Notification for recipient
+    await createAndEmitNotification({
+      recipient: toUser,
+      sender: req.userId,
+      type: 'SWAP_REQUEST',
+      title: 'New Skill Swap Request ⚡',
+      message: `${currentUser.name} wants to swap skills: offering "${offeredSkill}" in exchange for your "${wantedSkill}".`,
+      relatedSwap: swapRequest._id,
+    });
+
     res.status(201).json(swapRequest);
   } catch (err) {
     res.status(500).json({ message: 'Server error', error: err.message });
@@ -98,10 +109,13 @@ exports.acceptSwapRequest = async (req, res) => {
       return res.status(400).json({ message: 'Invalid swap ID' });
     }
 
-    const swap = await SwapRequest.findById(req.params.id);
+    const swap = await SwapRequest.findById(req.params.id)
+      .populate('fromUser', 'name email')
+      .populate('toUser', 'name email');
+
     if (!swap) return res.status(404).json({ message: 'Swap request not found' });
 
-    if (swap.toUser.toString() !== req.userId) {
+    if (swap.toUser._id.toString() !== req.userId.toString()) {
       return res.status(403).json({ message: 'Not authorized to accept this request' });
     }
     if (swap.status !== 'pending') {
@@ -111,6 +125,16 @@ exports.acceptSwapRequest = async (req, res) => {
     swap.status = 'accepted';
     swap.roomId = `skillswap-${swap._id}`;
     await swap.save();
+
+    // Trigger Notification for the original sender (fromUser)
+    await createAndEmitNotification({
+      recipient: swap.fromUser._id,
+      sender: req.userId,
+      type: 'SWAP_ACCEPTED',
+      title: 'Swap Request Accepted! 🚀',
+      message: `${swap.toUser.name} accepted your swap request for ${swap.offeredSkill} ⇄ ${swap.wantedSkill}. Your private WebRTC room is ready!`,
+      relatedSwap: swap._id,
+    });
 
     res.status(200).json(swap);
   } catch (err) {
@@ -125,10 +149,13 @@ exports.rejectSwapRequest = async (req, res) => {
       return res.status(400).json({ message: 'Invalid swap ID' });
     }
 
-    const swap = await SwapRequest.findById(req.params.id);
+    const swap = await SwapRequest.findById(req.params.id)
+      .populate('fromUser', 'name email')
+      .populate('toUser', 'name email');
+
     if (!swap) return res.status(404).json({ message: 'Swap request not found' });
 
-    if (swap.toUser.toString() !== req.userId) {
+    if (swap.toUser._id.toString() !== req.userId.toString()) {
       return res.status(403).json({ message: 'Not authorized to reject this request' });
     }
     if (swap.status !== 'pending') {
@@ -137,6 +164,16 @@ exports.rejectSwapRequest = async (req, res) => {
 
     swap.status = 'rejected';
     await swap.save();
+
+    // Trigger Notification for the original sender (fromUser)
+    await createAndEmitNotification({
+      recipient: swap.fromUser._id,
+      sender: req.userId,
+      type: 'SWAP_REJECTED',
+      title: 'Swap Request Declined',
+      message: `${swap.toUser.name} declined your swap request for ${swap.offeredSkill} ⇄ ${swap.wantedSkill}.`,
+      relatedSwap: swap._id,
+    });
 
     res.status(200).json(swap);
   } catch (err) {
@@ -151,10 +188,13 @@ exports.cancelSwapRequest = async (req, res) => {
       return res.status(400).json({ message: 'Invalid swap ID' });
     }
 
-    const swap = await SwapRequest.findById(req.params.id);
+    const swap = await SwapRequest.findById(req.params.id)
+      .populate('fromUser', 'name email')
+      .populate('toUser', 'name email');
+
     if (!swap) return res.status(404).json({ message: 'Swap request not found' });
 
-    if (swap.fromUser.toString() !== req.userId) {
+    if (swap.fromUser._id.toString() !== req.userId.toString()) {
       return res.status(403).json({ message: 'Only the sender can cancel a request' });
     }
     if (swap.status !== 'pending') {
@@ -164,6 +204,16 @@ exports.cancelSwapRequest = async (req, res) => {
     swap.status = 'cancelled';
     swap.cancelReason = req.body.reason || '';
     await swap.save();
+
+    // Trigger Notification for the target receiver (toUser)
+    await createAndEmitNotification({
+      recipient: swap.toUser._id,
+      sender: req.userId,
+      type: 'SWAP_CANCELLED',
+      title: 'Swap Request Cancelled',
+      message: `${swap.fromUser.name} cancelled the swap proposal.${swap.cancelReason ? ` Reason: ${swap.cancelReason}` : ''}`,
+      relatedSwap: swap._id,
+    });
 
     res.status(200).json(swap);
   } catch (err) {
@@ -178,13 +228,16 @@ exports.completeSwapRequest = async (req, res) => {
       return res.status(400).json({ message: 'Invalid swap ID' });
     }
 
-    const swap = await SwapRequest.findById(req.params.id);
+    const swap = await SwapRequest.findById(req.params.id)
+      .populate('fromUser', 'name email')
+      .populate('toUser', 'name email');
+
     if (!swap) return res.status(404).json({ message: 'Swap request not found' });
 
-    if (
-      swap.fromUser.toString() !== req.userId &&
-      swap.toUser.toString()   !== req.userId
-    ) {
+    const isFromUser = swap.fromUser._id.toString() === req.userId.toString();
+    const isToUser   = swap.toUser._id.toString()   === req.userId.toString();
+
+    if (!isFromUser && !isToUser) {
       return res.status(403).json({ message: 'Not authorized' });
     }
     if (swap.status !== 'accepted') {
@@ -193,6 +246,19 @@ exports.completeSwapRequest = async (req, res) => {
 
     swap.status = 'completed';
     await swap.save();
+
+    // Trigger Notification for the other partner
+    const currentUser = isFromUser ? swap.fromUser : swap.toUser;
+    const otherUser   = isFromUser ? swap.toUser : swap.fromUser;
+
+    await createAndEmitNotification({
+      recipient: otherUser._id,
+      sender: currentUser._id,
+      type: 'SWAP_COMPLETED',
+      title: 'Swap Marked as Completed! ⭐',
+      message: `${currentUser.name} marked your skill session as completed. Please write a review and leave an endorsement!`,
+      relatedSwap: swap._id,
+    });
 
     res.status(200).json(swap);
   } catch (err) {
@@ -219,21 +285,39 @@ exports.scheduleSwap = async (req, res) => {
       return res.status(400).json({ message: 'Scheduled time must be in the future' });
     }
 
-    const swap = await SwapRequest.findById(req.params.id);
+    const swap = await SwapRequest.findById(req.params.id)
+      .populate('fromUser', 'name email')
+      .populate('toUser', 'name email');
+
     if (!swap) return res.status(404).json({ message: 'Swap request not found' });
 
-    if (
-      swap.fromUser.toString() !== req.userId &&
-      swap.toUser.toString()   !== req.userId
-    ) {
+    const isFromUser = swap.fromUser._id.toString() === req.userId.toString();
+    const isToUser   = swap.toUser._id.toString()   === req.userId.toString();
+
+    if (!isFromUser && !isToUser) {
       return res.status(403).json({ message: 'Not authorized to schedule this swap' });
     }
     if (swap.status !== 'accepted') {
       return res.status(400).json({ message: 'Only accepted swaps can be scheduled' });
     }
 
+    const wasPreviouslyScheduled = !!swap.scheduledAt;
     swap.scheduledAt = scheduledDate;
     await swap.save();
+
+    // Trigger Notification for the partner
+    const currentUser = isFromUser ? swap.fromUser : swap.toUser;
+    const otherUser   = isFromUser ? swap.toUser : swap.fromUser;
+    const formattedDate = scheduledDate.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+
+    await createAndEmitNotification({
+      recipient: otherUser._id,
+      sender: currentUser._id,
+      type: wasPreviouslyScheduled ? 'SESSION_RESCHEDULED' : 'SESSION_SCHEDULED',
+      title: wasPreviouslyScheduled ? 'Session Rescheduled 📅' : 'Session Scheduled 📅',
+      message: `${currentUser.name} scheduled your video session for ${formattedDate}.`,
+      relatedSwap: swap._id,
+    });
 
     res.status(200).json(swap);
   } catch (err) {
