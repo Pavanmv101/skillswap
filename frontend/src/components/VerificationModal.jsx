@@ -1,11 +1,24 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import api from '../api/axios'
 import { useToast } from '../context/ToastContext'
 
-export default function VerificationModal({ skillsOffered = [], initialSkill = '', onClose, onSuccess }) {
+export default function VerificationModal({
+  isOpen = true,
+  skillsOffered = [],
+  skill = null,
+  initialSkill = '',
+  onClose,
+  onSuccess,
+}) {
   const { addToast } = useToast()
 
-  const [selectedSkill, setSelectedSkill] = useState(initialSkill || skillsOffered[0]?.skill || '')
+  const targetSkillName =
+    (typeof skill === 'object' && skill !== null ? skill.skill : skill) ||
+    initialSkill ||
+    skillsOffered[0]?.skill ||
+    ''
+
+  const [selectedSkill, setSelectedSkill] = useState(targetSkillName)
   const [evidenceType, setEvidenceType]   = useState('github')
   const [evidenceUrl, setEvidenceUrl]     = useState('')
   const [description, setDescription]     = useState('')
@@ -13,6 +26,26 @@ export default function VerificationModal({ skillsOffered = [], initialSkill = '
   const [fileName, setFileName]           = useState('')
   const [loading, setLoading]             = useState(false)
   const [error, setError]                 = useState('')
+
+  useEffect(() => {
+    if (targetSkillName) {
+      setSelectedSkill(targetSkillName)
+    }
+  }, [targetSkillName])
+
+  // Close on Escape key press
+  useEffect(() => {
+    if (!isOpen) return
+    function handleKeyDown(e) {
+      if (e.key === 'Escape' && onClose) {
+        onClose()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isOpen, onClose])
+
+  if (!isOpen) return null
 
   // Handle local document file selection (PDF, PNG, JPG)
   function handleFileChange(e) {

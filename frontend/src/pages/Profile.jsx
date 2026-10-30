@@ -524,15 +524,19 @@ export default function Profile() {
       )}
 
       {/* Verification Evidence Submission Modal */}
-      <VerificationModal
-        isOpen={verifyModalOpen}
-        skill={selectedSkill}
-        onClose={() => setVerifyModalOpen(false)}
-        onSuccess={() => {
-          loadProfileAndTrustData()
-          addToast('Verification evidence submitted successfully for admin review! 🛡️', 'success')
-        }}
-      />
+      {verifyModalOpen && (
+        <VerificationModal
+          isOpen={verifyModalOpen}
+          skillsOffered={skillsOffered}
+          skill={selectedSkill}
+          initialSkill={selectedSkill?.skill || selectedSkill || ''}
+          onClose={() => setVerifyModalOpen(false)}
+          onSuccess={() => {
+            loadProfileAndTrustData()
+            addToast('Verification evidence submitted successfully for admin review! 🛡️', 'success')
+          }}
+        />
+      )}
     </div>
   )
 }
