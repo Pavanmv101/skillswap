@@ -108,6 +108,11 @@ const demoUsers = [
 ];
 
 async function seed() {
+  if (process.env.NODE_ENV === 'production' && !process.env.ALLOW_PROD_SEED) {
+    console.error('❌ SEED ABORTED: seed.js cannot run in production unless ALLOW_PROD_SEED=true is explicitly set.');
+    process.exit(1);
+  }
+
   try {
     await mongoose.connect(MONGO_URI);
     console.log('Connected to MongoDB for seeding...');

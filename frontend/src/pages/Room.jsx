@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { io } from 'socket.io-client'
+import api from '../api/axios'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 
@@ -64,8 +65,22 @@ export default function Room() {
           localVideoRef.current.srcObject = stream
         }
 
+        // Fetch dynamic STUN + optional TURN server configuration from backend
+        let iceConfiguration = ICE_SERVERS
+        try {
+          const { data: iceData } = await api.get('/swap/ice-servers')
+          if (iceData?.iceServers?.length > 0) {
+            iceConfiguration = { iceServers: iceData.iceServers }
+          }
+        } catch (iceErr) {
+          console.warn('[WebRTC] Falling back to default STUN configuration')
+        }
+
         // 2. Connect to backend signaling server via Socket.io
-        const socketUrl = window.location.hostname === 'localhost' ? 'http://localhost:5001' : window.location.origin
+        const socketUrl =
+          import.meta.env.VITE_SOCKET_URL ||
+          (import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/api\/?$/, '') : '') ||
+          (window.location.hostname === 'localhost' ? 'http://localhost:5001' : window.location.origin)
         const socket = io(socketUrl, {
           transports: ['websocket', 'polling'],
         })
@@ -86,7 +101,7 @@ export default function Room() {
 
         // Helper: create PeerConnection
         function createPeerConnection() {
-          const pc = new RTCPeerConnection(ICE_SERVERS)
+          const pc = new RTCPeerConnection(iceConfiguration)
           pcRef.current = pc
 
           // Add all local tracks

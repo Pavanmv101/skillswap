@@ -52,7 +52,10 @@ export function NotificationProvider({ children }) {
 
     refreshNotifications()
 
-    const socketUrl = window.location.hostname === 'localhost' ? 'http://localhost:5001' : window.location.origin
+    const socketUrl =
+      import.meta.env.VITE_SOCKET_URL ||
+      (import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/api\/?$/, '') : '') ||
+      (window.location.hostname === 'localhost' ? 'http://localhost:5001' : window.location.origin)
     const socket = io(socketUrl, {
       auth: { token },
       transports: ['websocket', 'polling'],

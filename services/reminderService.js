@@ -7,21 +7,33 @@ const REMINDER_WINDOW_MINUTES = 30; // Configurable window (30 minutes prior to 
 const CHECK_INTERVAL_MS = 60 * 1000; // Check every 60 seconds
 
 let intervalId = null;
+let isProcessing = false;
 
 /**
  * Checks for upcoming accepted sessions within the reminder window
  * and creates non-duplicate notifications for both participants.
+ * Includes concurrency lock and recovery for missed execution windows.
  */
 async function checkUpcomingSessionReminders() {
+  if (isProcessing) {
+    console.log('[Reminder Service] Skip: Prior reminder check cycle is still actively processing');
+    return { skipped: true, reason: 'concurrency_lock' };
+  }
+
+  isProcessing = true;
+  let sentCount = 0;
+
   try {
     const now = new Date();
+    // Catch-up window: includes sessions up to 15 mins past (e.g. after server cold-start wake-up)
+    const catchUpPastThreshold = new Date(now.getTime() - 15 * 60 * 1000);
     const reminderThreshold = new Date(now.getTime() + REMINDER_WINDOW_MINUTES * 60 * 1000);
 
-    // Find all accepted swaps scheduled between now and (now + 30 minutes)
+    // Strictly find accepted swaps only (never completed or cancelled)
     const upcomingSwaps = await SwapRequest.find({
       status: 'accepted',
       scheduledAt: {
-        $gte: now,
+        $gte: catchUpPastThreshold,
         $lte: reminderThreshold,
       },
     })
@@ -52,6 +64,7 @@ async function checkUpcomingSessionReminders() {
           message: `Your video call with ${swap.toUser.name} (${swap.offeredSkill} ⇄ ${swap.wantedSkill}) starts soon at ${timeFormatted}.`,
           relatedSwap: swap._id,
         });
+        sentCount++;
         console.log(`[Reminder Service] Sent reminder to ${swap.fromUser.name} for swap ${swap._id}`);
       }
 
@@ -71,11 +84,17 @@ async function checkUpcomingSessionReminders() {
           message: `Your video call with ${swap.fromUser.name} (${swap.wantedSkill} ⇄ ${swap.offeredSkill}) starts soon at ${timeFormatted}.`,
           relatedSwap: swap._id,
         });
+        sentCount++;
         console.log(`[Reminder Service] Sent reminder to ${swap.toUser.name} for swap ${swap._id}`);
       }
     }
+
+    return { processed: upcomingSwaps.length, sentCount, timestamp: now };
   } catch (err) {
     console.error('[Reminder Service] Error checking session reminders:', err);
+    return { error: err.message };
+  } finally {
+    isProcessing = false;
   }
 }
 

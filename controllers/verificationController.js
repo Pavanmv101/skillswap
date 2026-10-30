@@ -3,6 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 const mongoose = require('mongoose');
 const SkillVerification = require('../models/SkillVerification');
+const CertificateFile = require('../models/CertificateFile');
 const User = require('../models/User');
 const { createAndEmitNotification } = require('../services/notificationService');
 
@@ -74,6 +75,7 @@ exports.submitVerification = async (req, res) => {
     let savedFilePath = '';
     let originalName = '';
     let detectedMime = '';
+    let fileBuffer = null;
 
     // Validate URL evidence
     if (['github', 'portfolio', 'project'].includes(evidenceType)) {
@@ -100,7 +102,7 @@ exports.submitVerification = async (req, res) => {
 
       // Strip data URI prefix if present (e.g. data:application/pdf;base64,...)
       const base64Data = certificateBase64.replace(/^data:[^;]+;base64,/, '');
-      const fileBuffer = Buffer.from(base64Data, 'base64');
+      fileBuffer = Buffer.from(base64Data, 'base64');
 
       // Max size: 5 MB
       const MAX_SIZE = 5 * 1024 * 1024;
@@ -119,9 +121,15 @@ exports.submitVerification = async (req, res) => {
       // Extension mapping based on verified MIME
       const ext = detectedMime === 'application/pdf' ? 'pdf' : detectedMime === 'image/png' ? 'png' : 'jpg';
       const fileId = `${crypto.randomUUID()}.${ext}`;
-      const destination = path.join(CERTIFICATES_DIR, fileId);
 
-      await fs.promises.writeFile(destination, fileBuffer);
+      // Save to local cache directory if available
+      try {
+        const destination = path.join(CERTIFICATES_DIR, fileId);
+        await fs.promises.writeFile(destination, fileBuffer);
+      } catch (fsErr) {
+        console.warn('[Storage] Local disk write fallback note:', fsErr.message);
+      }
+
       savedFilePath = fileId;
       originalName = (certificateFileName || `certificate.${ext}`).replace(/[^a-zA-Z0-9._-]/g, '_');
     }
@@ -155,6 +163,23 @@ exports.submitVerification = async (req, res) => {
 
       await existing.save();
 
+      // Persist certificate file data in dedicated collection for 100% cloud durability
+      if (savedFilePath && fileBuffer) {
+        await CertificateFile.findOneAndUpdate(
+          { verification: existing._id },
+          {
+            verification: existing._id,
+            user: req.userId,
+            fileId: savedFilePath,
+            originalName,
+            mimeType: detectedMime,
+            size: fileBuffer.length,
+            data: fileBuffer,
+          },
+          { upsert: true, new: true }
+        );
+      }
+
       // Trigger Notification
       await createAndEmitNotification({
         recipient: req.userId,
@@ -181,6 +206,19 @@ exports.submitVerification = async (req, res) => {
     });
 
     await verification.save();
+
+    // Persist certificate file data in dedicated collection for 100% cloud durability
+    if (savedFilePath && fileBuffer) {
+      await CertificateFile.create({
+        verification: verification._id,
+        user: req.userId,
+        fileId: savedFilePath,
+        originalName,
+        mimeType: detectedMime,
+        size: fileBuffer.length,
+        data: fileBuffer,
+      });
+    }
 
     // Trigger Notification
     await createAndEmitNotification({
@@ -261,6 +299,24 @@ exports.downloadCertificateFile = async (req, res) => {
       return res.status(403).json({ message: 'Access denied: You do not have permission to view this document' });
     }
 
+    // 1. First check persistent cloud storage (MongoDB CertificateFile collection)
+    const certDoc = await CertificateFile.findOne({
+      $or: [
+        { verification: verification._id },
+        { fileId: verification.certificateFile },
+      ],
+    });
+
+    if (certDoc && certDoc.data) {
+      res.setHeader('Content-Type', certDoc.mimeType || verification.certificateMimeType || 'application/octet-stream');
+      res.setHeader(
+        'Content-Disposition',
+        `inline; filename="${certDoc.originalName || verification.certificateOriginalName || 'certificate'}"`
+      );
+      return res.send(certDoc.data);
+    }
+
+    // 2. Fallback to local filesystem cache if available
     const filePath = path.join(CERTIFICATES_DIR, path.basename(verification.certificateFile));
 
     if (!fs.existsSync(filePath)) {

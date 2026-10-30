@@ -17,6 +17,7 @@ const verificationRoutes = require('./routes/verificationRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const endorsementRoutes = require('./routes/endorsementRoutes');
 const learningRoutes = require('./routes/learningRoutes');
+const cronRoutes = require('./routes/cronRoutes');
 
 // Import notification and reminder services
 const { setIO } = require('./services/notificationService');
@@ -25,11 +26,51 @@ const { initReminderScheduler } = require('./services/reminderService');
 const app = express();
 const server = http.createServer(app);
 
+// ── Production-Grade Trusted CORS Configuration ───────────────────────────
+const localDevOrigins = [
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'http://localhost:5173',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:3001',
+  'http://127.0.0.1:5173',
+];
+
+const configuredClientUrls = process.env.CLIENT_URL
+  ? process.env.CLIENT_URL.split(',').map(u => u.trim().replace(/\/$/, ''))
+  : [];
+
+const allowedOrigins = [...localDevOrigins, ...configuredClientUrls];
+
+const corsOriginDelegate = (origin, callback) => {
+  // Allow requests with no origin (curl, server-to-server, native mobile)
+  if (!origin) return callback(null, true);
+
+  if (process.env.NODE_ENV !== 'production' || configuredClientUrls.length === 0) {
+    // In local development or testing, permit all
+    return callback(null, true);
+  }
+
+  // In production, match trusted client URLs or Vercel preview URLs if configured
+  const isAllowed = allowedOrigins.some(allowed =>
+    origin === allowed || (allowed.includes('.vercel.app') && origin.endsWith('.vercel.app'))
+  );
+
+  if (isAllowed) {
+    callback(null, true);
+  } else {
+    callback(new Error(`Origin ${origin} not allowed by SkillSwap CORS policy`));
+  }
+};
+
 // Initialize Socket.io for WebRTC signaling and real-time notifications
 const io = new Server(server, {
   cors: {
-    origin: '*',
+    origin: process.env.NODE_ENV === 'production' && configuredClientUrls.length > 0
+      ? (origin, cb) => corsOriginDelegate(origin, cb)
+      : '*',
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    credentials: true,
   },
 });
 
@@ -57,8 +98,19 @@ io.use((socket, next) => {
 // Connect to MongoDB
 connectDB();
 
-app.use(cors());
+app.use(cors({ origin: corsOriginDelegate, credentials: true }));
 app.use(express.json({ limit: '10mb' }));
+
+// Safe Health Check Endpoint for Render keep-alive and UptimeRobot monitoring
+app.get('/api/health', (req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    service: 'skillswap-backend',
+    environment: process.env.NODE_ENV || 'development',
+    timestamp: new Date().toISOString(),
+    uptime: Math.floor(process.uptime()),
+  });
+});
 
 // Mount API routes
 app.use('/api/auth', authRoutes);
@@ -71,6 +123,7 @@ app.use('/api/verification', verificationRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/endorsements', endorsementRoutes);
 app.use('/api/learning', learningRoutes);
+app.use('/api/cron', cronRoutes);
 
 // Real-time Event Handlers
 io.on('connection', (socket) => {
