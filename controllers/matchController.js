@@ -2,13 +2,13 @@ const User = require('../models/User');
 
 // ─── Compatibility Scoring ────────────────────────────────────────────────────
 // Returns { score, note } between 0-100.
-// Fully transparent — no ML, just rule-based overlap counting.
+// Fully transparent — no ML, rule-based reciprocal overlap.
 function computeCompatibility(currentUser, candidate) {
   const reasons = [];
   let score = 0;
 
-  const myWanted    = (currentUser.skillsWanted  || []).map(s => s.skill.toLowerCase());
-  const myOffered   = (currentUser.skillsOffered || []).map(s => s.skill.toLowerCase());
+  const myWanted     = (currentUser.skillsWanted  || []).map(s => s.skill.toLowerCase());
+  const myOffered    = (currentUser.skillsOffered || []).map(s => s.skill.toLowerCase());
   const theirOffered = (candidate.skillsOffered  || []).map(s => s.skill.toLowerCase());
   const theirWanted  = (candidate.skillsWanted   || []).map(s => s.skill.toLowerCase());
 
@@ -63,12 +63,13 @@ exports.getMatches = async (req, res) => {
     const myWanted = (user.skillsWanted || []).map(s => s.skill);
 
     if (myWanted.length === 0) {
-      return res.status(200).json({ matches: [], message: 'Add skills you want to learn to see matches.' });
+      return res.status(200).json({ matches: [], message: 'Add skills you want to learn in your profile to see ranked matches.' });
     }
 
-    // Fetch candidates: exclude self and blocked users
+    // Fetch candidates: exclude self, users blocked by current user, AND users who blocked current user
     const candidates = await User.find({
       _id: { $nin: [user._id, ...(user.blockedUsers || [])] },
+      blockedUsers: { $ne: user._id },
       'skillsOffered.skill': { $in: myWanted },
     }).select('-password -blockedUsers');
 
@@ -107,17 +108,22 @@ exports.getMatches = async (req, res) => {
 };
 
 // GET /api/match/search?q=keyword
-// Browse / search users by skill name
+// Browse / search users by skill name or user name (mutually excludes blocked users)
 exports.searchUsers = async (req, res) => {
   try {
+    const user = await User.findById(req.userId);
+    const blockedList = user ? (user.blockedUsers || []) : [];
+
     const q = req.query.q || '';
     const regex = new RegExp(q, 'i');
 
     const users = await User.find({
-      _id: { $ne: req.userId },
+      _id: { $nin: [req.userId, ...blockedList] },
+      blockedUsers: { $ne: req.userId },
       $or: [
         { name: regex },
         { 'skillsOffered.skill': regex },
+        { 'skillsWanted.skill': regex },
       ],
     }).select('name bio skillsOffered skillsWanted averageRating totalRatings availability availabilitySlots');
 

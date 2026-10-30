@@ -47,7 +47,8 @@ export default function Swaps() {
     setActionLoading(id + action)
     try {
       await api.put(`/swap/${id}/${action}`, body)
-      addToast(`Swap status updated to ${action}ed! ✨`, 'success')
+      const actionName = action === 'accept' ? 'accepted' : action === 'reject' ? 'declined' : action === 'complete' ? 'completed' : 'cancelled'
+      addToast(`Swap ${actionName} successfully! ✨`, 'success')
       await loadSwaps()
     } catch (err) {
       const msg = err.response?.data?.message || `Failed to ${action} swap`
@@ -64,6 +65,7 @@ export default function Swaps() {
   const sentCount     = swaps.filter(s => (s.fromUser?._id === uid || s.fromUser === uid) && s.status === 'pending').length
   const activeCount   = swaps.filter(s => s.status === 'accepted').length
   const doneCount     = swaps.filter(s => s.status === 'completed').length
+  const archivedCount = swaps.filter(s => s.status === 'cancelled' || s.status === 'rejected').length
 
   const filtered = swaps.filter(s => {
     const from = s.fromUser?._id || s.fromUser
@@ -72,6 +74,7 @@ export default function Swaps() {
     if (tab === 'sent')      return from === uid && s.status === 'pending'
     if (tab === 'active')    return s.status === 'accepted'
     if (tab === 'completed') return s.status === 'completed'
+    if (tab === 'archived')  return s.status === 'cancelled' || s.status === 'rejected'
     return true
   })
 
@@ -120,6 +123,13 @@ export default function Swaps() {
           Completed
           {doneCount > 0 && <span className="tab-counter">{doneCount}</span>}
         </button>
+        <button
+          className={`tab-btn ${tab === 'archived' ? 'tab-btn-active' : ''}`}
+          onClick={() => setTab('archived')}
+        >
+          Archived
+          {archivedCount > 0 && <span className="tab-counter">{archivedCount}</span>}
+        </button>
       </div>
 
       {/* Empty State */}
@@ -130,6 +140,7 @@ export default function Swaps() {
             {tab === 'sent' && '🚀'}
             {tab === 'active' && '🎥'}
             {tab === 'completed' && '🏆'}
+            {tab === 'archived' && '📂'}
           </div>
           <h3>No {tab} swaps</h3>
           <p style={{ maxWidth: 460, margin: '.5rem auto 1.5rem', color: 'var(--text-muted)' }}>
@@ -137,6 +148,7 @@ export default function Swaps() {
             {tab === 'sent' && 'You have not sent any pending requests. Browse candidates and propose a barter.'}
             {tab === 'active' && 'No active swaps yet. Once a proposal is accepted, your live video room will show up here.'}
             {tab === 'completed' && 'No completed sessions yet. Finish an active session to rate and leave reviews.'}
+            {tab === 'archived' && 'No archived, cancelled, or declined swap requests in your history.'}
           </p>
           <Link to="/matches" className="btn btn-primary shadow-glow">
             Find Matches →
@@ -199,6 +211,11 @@ export default function Swaps() {
                           ⚡ {s.compatibilityScore}% Compatibility
                         </span>
                       )}
+                      {s.cancelReason && (
+                        <span className="meta-pill" style={{ color: 'var(--danger)' }}>
+                          Reason: {s.cancelReason}
+                        </span>
+                      )}
                       <span className="meta-pill" style={{ color: 'var(--text-muted)' }}>
                         Created {new Date(s.createdAt).toLocaleDateString()}
                       </span>
@@ -233,7 +250,7 @@ export default function Swaps() {
                     <button
                       className="btn btn-muted btn-sm"
                       disabled={actionLoading === s._id + 'cancel'}
-                      onClick={() => handleAction(s._id, 'cancel')}
+                      onClick={() => handleAction(s._id, 'cancel', { reason: 'Cancelled by sender' })}
                     >
                       Cancel Request
                     </button>

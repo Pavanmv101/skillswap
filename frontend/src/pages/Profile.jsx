@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import Spinner from '../components/Spinner'
 import Avatar from '../components/Avatar'
+import AvailabilityCalendar from '../components/AvailabilityCalendar'
 
 const CATEGORIES = ['General', 'Programming', 'Design', 'Music', 'Language', 'Sports', 'Academic', 'Business', 'Other']
 const LEVELS     = ['Beginner', 'Intermediate', 'Advanced']
@@ -85,6 +86,17 @@ export default function Profile() {
     e.preventDefault()
     setSaving(true)
     setError('')
+
+    // Validate slots
+    for (const s of slots) {
+      if (s.from >= s.to) {
+        const msg = `Invalid time slot on ${s.day}: Start time (${s.from}) must be earlier than end time (${s.to})`
+        setError(msg)
+        addToast(msg, 'warning')
+        setSaving(false)
+        return
+      }
+    }
 
     const offered = skillsOffered.filter(s => s.skill.trim())
     const wanted  = skillsWanted.filter(s => s.skill.trim())
@@ -331,6 +343,12 @@ export default function Profile() {
               ))
             )}
           </div>
+
+          {slots.length > 0 && (
+            <div style={{ marginTop: '1.25rem' }}>
+              <AvailabilityCalendar slots={slots} title="Your Weekly Visual Calendar Preview" />
+            </div>
+          )}
         </div>
 
         {/* Save Bar */}

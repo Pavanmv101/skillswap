@@ -2228,3 +2228,179 @@ button, input, select, textarea {
 .webrtc-room-container ::-webkit-scrollbar-thumb {
   background: rgba(255,255,255,0.15);
 }
+
+/* ─── Toast Warning ──────────────────────────────────────────────────────── */
+.toast-warning {
+  border-left: 4px solid var(--warning);
+}
+
+/* ─── Matches Status Strip ───────────────────────────────────────────────── */
+.matches-status-strip {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 1rem;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.status-strip-left {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.result-count-badge {
+  font-size: 0.8rem;
+  font-weight: 700;
+  background: var(--surface);
+  color: var(--text-main);
+  padding: 0.3rem 0.75rem;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border);
+}
+
+.active-filter-tag {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+/* ─── Availability Calendar Component ────────────────────────────────────── */
+.availability-calendar-card {
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem 1.15rem;
+}
+
+.avail-calendar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.mutual-overlap-banner {
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  border-radius: var(--radius-sm);
+  padding: 0.65rem 0.85rem;
+  margin-bottom: 0.85rem;
+}
+
+.mutual-banner-title {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: #065f46;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.4rem;
+}
+
+.mutual-pills-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.mutual-slot-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: #ffffff;
+  border: 1px solid #6ee7b7;
+  color: #047857;
+  padding: 0.25rem 0.65rem;
+  border-radius: var(--radius-full);
+  font-size: 0.78rem;
+  font-weight: 600;
+  transition: var(--transition);
+}
+
+.mutual-slot-pill:hover {
+  background: #d1fae5;
+  border-color: #10b981;
+  transform: translateY(-1px);
+}
+
+.pill-action {
+  font-size: 0.7rem;
+  background: #10b981;
+  color: #fff;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+}
+
+.calendar-week-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+}
+
+.calendar-day-col {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.35rem;
+  text-align: center;
+  min-height: 80px;
+  display: flex;
+  flex-direction: column;
+}
+
+.calendar-day-col.has-overlap {
+  border-color: #10b981;
+  background: #f0fdf4;
+}
+
+.day-col-header {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-bottom: 0.35rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+}
+
+.overlap-indicator {
+  color: #10b981;
+  font-size: 0.65rem;
+}
+
+.day-slots-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1;
+}
+
+.calendar-slot-chip {
+  background: var(--primary-light);
+  color: var(--primary);
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 0.2rem 0.3rem;
+  border-radius: 4px;
+  word-break: break-word;
+}
+
+.calendar-day-col.has-overlap .calendar-slot-chip {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.empty-day-dash {
+  color: var(--text-subtle);
+  font-size: 0.8rem;
+  margin: auto;
+}
+
+@media (max-width: 640px) {
+  .calendar-week-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

@@ -5,26 +5,32 @@ import Spinner from '../components/Spinner'
 import Stars from '../components/Stars'
 import Avatar from '../components/Avatar'
 import SwapModal from '../components/SwapModal'
+import AvailabilityCalendar from '../components/AvailabilityCalendar'
 import { useToast } from '../context/ToastContext'
 
 export default function PublicProfile() {
   const { id } = useParams()
   const { addToast } = useToast()
   const [profile, setProfile] = useState(null)
+  const [myProfile, setMyProfile] = useState(null)
   const [ratings, setRatings] = useState([])
   const [loading, setLoading] = useState(true)
   const [swapModalOpen, setSwapModalOpen] = useState(false)
-  const [error, setError]   = useState('')
+  const [blockModalOpen, setBlockModalOpen] = useState(false)
+  const [blocking, setBlocking] = useState(false)
+  const [error, setError] = useState('')
 
   useEffect(() => {
     async function load() {
       try {
-        const [profileRes, ratingsRes] = await Promise.all([
+        const [profileRes, ratingsRes, myProfileRes] = await Promise.all([
           api.get(`/profile/${id}`),
           api.get(`/rating/user/${id}`),
+          api.get('/profile').catch(() => ({ data: null })),
         ])
         setProfile(profileRes.data)
         setRatings(ratingsRes.data || [])
+        setMyProfile(myProfileRes?.data)
       } catch (err) {
         setError('User profile not found')
       } finally {
@@ -34,15 +40,16 @@ export default function PublicProfile() {
     load()
   }, [id])
 
-  async function handleBlockUser() {
-    if (!window.confirm(`Are you sure you want to block ${profile.name}? They will no longer show up in your matches.`)) {
-      return
-    }
+  async function handleConfirmBlock() {
+    setBlocking(true)
     try {
       await api.post(`/profile/block/${id}`)
-      addToast(`User ${profile.name} blocked`, 'info')
+      addToast(`User ${profile.name} blocked from matches`, 'info')
+      setBlockModalOpen(false)
     } catch (err) {
-      addToast('Failed to block user', 'error')
+      addToast(err.response?.data?.message || 'Failed to block user', 'error')
+    } finally {
+      setBlocking(false)
     }
   }
 
@@ -57,7 +64,7 @@ export default function PublicProfile() {
   }
 
   return (
-    <div className="page" style={{ maxWidth: 720 }}>
+    <div className="page" style={{ maxWidth: 740 }}>
       <div style={{ marginBottom: '1.25rem' }}>
         <Link to="/matches" className="link-subtle">← Back to Matches</Link>
       </div>
@@ -88,7 +95,7 @@ export default function PublicProfile() {
           </button>
           <button
             className="btn btn-muted btn-sm"
-            onClick={handleBlockUser}
+            onClick={() => setBlockModalOpen(true)}
             title="Block user from matches"
           >
             Block User
@@ -124,17 +131,15 @@ export default function PublicProfile() {
           <p style={{ color: 'var(--text-muted)', fontSize: '.88rem' }}>No learning skills specified</p>
         )}
 
+        {/* Weekly Availability Calendar */}
         {profile.availabilitySlots?.length > 0 && (
-          <>
-            <h3 style={{ margin: '1.5rem 0 .75rem', fontSize: '1.05rem' }}>⏰ Available Free Hours</h3>
-            <div className="tag-list">
-              {profile.availabilitySlots.map((s, i) => (
-                <span className="tag" key={i} style={{ background: '#f8fafc', color: '#334155', border: '1px solid var(--border)' }}>
-                  📅 {s.day} ({s.from} – {s.to})
-                </span>
-              ))}
-            </div>
-          </>
+          <div style={{ marginTop: '1.75rem' }}>
+            <AvailabilityCalendar
+              slots={profile.availabilitySlots}
+              peerSlots={myProfile?.availabilitySlots || []}
+              title={`${profile.name}'s Weekly Schedule`}
+            />
+          </div>
         )}
       </div>
 
@@ -181,12 +186,44 @@ export default function PublicProfile() {
         </div>
       </div>
 
-      {/* Swap Modal */}
+      {/* Propose Swap Modal */}
       {swapModalOpen && (
         <SwapModal
-          match={{ user: profile, compatibilityScore: 0 }}
+          match={{ user: profile, compatibilityScore: 0, compatibilityNote: 'Direct swap proposal' }}
           onClose={() => setSwapModalOpen(false)}
         />
+      )}
+
+      {/* In-App Block User Confirmation Modal (No window.confirm) */}
+      {blockModalOpen && (
+        <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setBlockModalOpen(false) }}>
+          <div className="modal" style={{ maxWidth: 420 }}>
+            <div style={{ textAlign: 'center', padding: '0.5rem 0' }}>
+              <div style={{ fontSize: '2.5rem', marginBottom: '.5rem' }}>🛡️</div>
+              <h3>Block {profile.name}?</h3>
+              <p style={{ color: 'var(--text-muted)', fontSize: '.9rem', margin: '.5rem 0 1.5rem', lineHeight: 1.5 }}>
+                {profile.name} will no longer appear in your compatibility matches or searches, and won't be able to send you swap proposals.
+              </p>
+              <div style={{ display: 'flex', gap: '.5rem' }}>
+                <button
+                  className="btn btn-danger"
+                  style={{ flex: 1 }}
+                  onClick={handleConfirmBlock}
+                  disabled={blocking}
+                >
+                  {blocking ? 'Blocking…' : 'Yes, Block User'}
+                </button>
+                <button
+                  className="btn btn-muted"
+                  onClick={() => setBlockModalOpen(false)}
+                  disabled={blocking}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
