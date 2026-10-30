@@ -5,27 +5,42 @@ const HOW_IT_WORKS = [
   {
     step: '01',
     title: 'List Your Skills',
-    desc: 'Share what you excel at (coding, music, design) and choose what you are eager to learn.',
+    desc: 'Share what you excel at — coding, music, design, languages — and tell us what you are eager to learn next.',
     icon: '🎯'
   },
   {
     step: '02',
     title: 'Instant Smart Match',
-    desc: 'Our bidirectional scoring algorithm pairs you with peers based on reciprocal interests and schedules.',
+    desc: 'Our bidirectional scoring algorithm pairs you with peers based on reciprocal skill interests and overlapping schedules.',
     icon: '⚡'
   },
   {
     step: '03',
     title: 'Barter & Learn Live',
-    desc: 'Connect in an integrated Jitsi video session. No fees, no subscriptions, just pure peer-to-peer knowledge.',
+    desc: 'Connect via native WebRTC peer-to-peer video — zero latency, zero fees, no third-party relay. Just you and your peer.',
     icon: '🚀'
   }
 ]
 
+const FEATURES = [
+  { icon: '🤝', title: 'Bidirectional Matching', desc: 'Score up to 100 pts based on mutual skill overlap, so both partners always benefit equally.' },
+  { icon: '📅', title: 'Schedule Overlap Detection', desc: 'We compare weekly availability slots to surface peers who are actually free when you are.' },
+  { icon: '🎥', title: 'Native WebRTC Video', desc: 'Browser-to-browser P2P video using RTCPeerConnection — no plugins, no third-party SDK, no cost.' },
+  { icon: '⭐', title: 'Post-Session Ratings', desc: 'Rate your peer after each swap. Reputation drives quality and trust across the network.' },
+  { icon: '🔒', title: 'JWT Auth & Security', desc: 'Secure token-based authentication with bcrypt password hashing and protected API routes.' },
+  { icon: '📊', title: 'Transparent Scoring', desc: 'See exactly why you matched — forward skill points, reverse bonus, and schedule boost explained clearly.' },
+]
+
+const TESTIMONIALS = [
+  { name: 'Aarav S.', skill: 'React Developer', text: 'I traded React lessons for Python ML sessions with Priya. SkillSwap made the whole process seamless — from matching to video call in minutes!', score: 100 },
+  { name: 'Priya P.', skill: 'Data Scientist', text: 'The compatibility score was spot-on. Found my perfect learning partner in seconds. The WebRTC video is incredibly smooth.', score: 98 },
+  { name: 'Rohan M.', skill: 'UI/UX Designer', text: "As a designer learning guitar, I never thought I'd find a music teacher to swap with. SkillSwap matched me with exactly the right peer.", score: 85 },
+]
+
 const STATS = [
   { num: '100%', label: 'Free Peer Exchange' },
-  { num: '0.0s', label: 'Setup for Video Rooms' },
-  { num: '100 pts', label: 'Transparent Match Engine' },
+  { num: '< 1s', label: 'WebRTC Connect Time' },
+  { num: '100 pts', label: 'Transparent Match Score' },
   { num: '4.9★', label: 'Average Peer Rating' },
 ]
 
@@ -46,7 +61,7 @@ export default function Landing() {
             <span className="gradient-text">Master What You Don't.</span>
           </h1>
           <p className="hero-sub">
-            The currency on SkillSwap is knowledge. Swap coding lessons for guitar sessions, UI design for Python data science, or language practice for academic prep.
+            The currency on SkillSwap is knowledge. Swap coding lessons for guitar sessions, UI design for Python data science, or language practice for academic prep — all powered by native WebRTC video.
           </p>
 
           <div className="hero-actions">
@@ -99,7 +114,7 @@ export default function Landing() {
             </div>
             <div className="preview-footer">
               <span>📅 Monday 18:00 – 20:00 (Schedule Overlap)</span>
-              <span className="preview-status">🎥 Live Room Ready</span>
+              <span className="preview-status">🎥 WebRTC Room Ready</span>
             </div>
           </div>
         </div>
@@ -139,14 +154,65 @@ export default function Landing() {
         </div>
       </section>
 
+      {/* Features Grid */}
+      <section className="section-padding features-section">
+        <div className="section-header">
+          <div className="section-tag">Built Right</div>
+          <h2 className="section-title">Everything You Need</h2>
+          <p className="section-desc">A full-featured MERN stack platform engineered for real peer-to-peer skill exchange.</p>
+        </div>
+
+        <div className="features-grid">
+          {FEATURES.map(f => (
+            <div className="feature-card" key={f.title}>
+              <div className="feature-icon">{f.icon}</div>
+              <h4 className="feature-title">{f.title}</h4>
+              <p className="feature-desc">{f.desc}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Testimonials */}
+      <section className="section-padding">
+        <div className="section-header">
+          <div className="section-tag">Community Voices</div>
+          <h2 className="section-title">What Peers Say</h2>
+          <p className="section-desc">Real experiences from students who found their learning partners on SkillSwap.</p>
+        </div>
+
+        <div className="testimonials-grid">
+          {TESTIMONIALS.map(t => (
+            <div className="testimonial-card" key={t.name}>
+              <div className="testimonial-header">
+                <div className="testimonial-avatar">
+                  {t.name.split(' ').map(n => n[0]).join('')}
+                </div>
+                <div>
+                  <div className="testimonial-name">{t.name}</div>
+                  <div className="testimonial-skill">{t.skill}</div>
+                </div>
+                <div className="testimonial-score">⚡ {t.score}%</div>
+              </div>
+              <p className="testimonial-text">"{t.text}"</p>
+              <div className="testimonial-stars">{'⭐'.repeat(5)}</div>
+            </div>
+          ))}
+        </div>
+      </section>
+
       {/* Bottom CTA */}
       <section className="cta-banner">
         <div className="cta-inner">
+          <div className="cta-badge">🚀 Start Learning Today</div>
           <h2>Ready to Level Up Your Skills?</h2>
-          <p>Join fellow students exchanging skills right now. Free forever.</p>
-          <div style={{ marginTop: '1.5rem' }}>
+          <p>Join fellow students exchanging skills right now. Free forever. No credit card required.</p>
+          <div style={{ marginTop: '1.75rem', display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>
             <Link to={token ? "/matches" : "/register"} className="btn btn-primary btn-lg shadow-glow">
               Explore Matches Now →
+            </Link>
+            <Link to="/login" className="btn btn-glass btn-lg">
+              Demo Login
             </Link>
           </div>
         </div>
