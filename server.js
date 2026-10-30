@@ -4,6 +4,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
+const mongoose = require('mongoose');
 const connectDB = require('./config/db');
 
 // Import routes
@@ -303,43 +304,76 @@ const gracefulShutdown = async (signal = 'SIGTERM') => {
   }, 10000);
   forceExitTimer.unref();
 
-  try {
-    // 1. Stop background reminder scheduler
-    stopReminderScheduler();
+  let hasError = false;
 
-    // 2. Close Socket.io server to stop real-time events and disconnect peers
-    if (io) {
-      console.log('[Server] Closing Socket.io engine...');
+  // 1. Stop background reminder scheduler
+  try {
+    stopReminderScheduler();
+  } catch (schedErr) {
+    console.error('[Server] Error stopping reminder scheduler:', schedErr.message);
+    hasError = true;
+  }
+
+  // 2. Close Socket.io server (in Socket.io v4, io.close() disconnects sockets and closes attached httpServer)
+  if (io) {
+    try {
+      console.log('[Server] Closing Socket.io engine and attached HTTP server...');
       await new Promise((resolve) => {
-        io.close(() => {
-          console.log('[Server] Socket.io connections closed.');
+        io.close((err) => {
+          if (err) {
+            console.error('[Server] Note during Socket.io close:', err.message);
+          } else {
+            console.log('[Server] Socket.io engine and attached HTTP server closed.');
+          }
           resolve();
         });
       });
+    } catch (ioErr) {
+      console.error('[Server] Error closing Socket.io:', ioErr.message);
+      hasError = true;
     }
+  }
 
-    // 3. Stop accepting new HTTP requests and wait for in-flight requests
-    console.log('[Server] Closing HTTP server...');
-    await new Promise((resolve, reject) => {
-      server.close((err) => {
-        if (err) return reject(err);
-        console.log('[Server] HTTP server stopped accepting connections.');
-        resolve();
+  // 3. Fallback: Close HTTP server only if still listening (e.g. if io was not attached or omitted)
+  if (server.listening) {
+    try {
+      console.log('[Server] Closing HTTP server...');
+      await new Promise((resolve) => {
+        server.close((err) => {
+          if (err && err.code !== 'ERR_SERVER_NOT_RUNNING') {
+            console.error('[Server] Note during HTTP server close:', err.message);
+          } else {
+            console.log('[Server] HTTP server stopped accepting connections.');
+          }
+          resolve();
+        });
       });
-    });
+    } catch (srvErr) {
+      console.error('[Server] Error closing HTTP server:', srvErr.message);
+      hasError = true;
+    }
+  }
 
-    // 4. Close MongoDB connection
-    console.log('[Server] Closing MongoDB connection...');
-    await mongoose.connection.close(false);
-    console.log('[Server] MongoDB connection closed cleanly.');
+  // 4. Close MongoDB connection cleanly (always attempted, never skipped by earlier step errors)
+  try {
+    if (mongoose.connection && mongoose.connection.readyState !== 0) {
+      console.log('[Server] Closing MongoDB connection...');
+      await mongoose.connection.close(false);
+      console.log('[Server] MongoDB connection closed cleanly.');
+    }
+  } catch (dbErr) {
+    console.error('[Server] Error closing MongoDB connection:', dbErr.message);
+    hasError = true;
+  }
 
-    clearTimeout(forceExitTimer);
-    console.log('[Server] Graceful shutdown complete. Exiting process.');
-    process.exit(0);
-  } catch (err) {
-    console.error('[Server] Error during graceful shutdown:', err);
-    clearTimeout(forceExitTimer);
+  clearTimeout(forceExitTimer);
+
+  if (hasError) {
+    console.warn('[Server] Graceful shutdown finished with warnings/errors. Exiting with code 1.');
     process.exit(1);
+  } else {
+    console.log('[Server] Graceful shutdown complete. Exiting process with code 0.');
+    process.exit(0);
   }
 };
 

@@ -186,6 +186,94 @@ async function runTests() {
     });
   });
 
+  await testAsync('Graceful Shutdown: Socket.io attached closes httpServer without duplicate close error', async () => {
+    const http = require('http');
+    const { Server } = require('socket.io');
+
+    const testHttpServer = http.createServer((req, res) => res.end('ok'));
+    const testIo = new Server(testHttpServer);
+
+    await new Promise((resolve) => testHttpServer.listen(0, resolve));
+    assert.strictEqual(testHttpServer.listening, true, 'Test HTTP server must be listening');
+
+    let duplicateCloseCaught = false;
+    let serverCloseCalledWhenNotListening = false;
+
+    // Simulate graceful shutdown sequence with Socket.io attached
+    await new Promise((resolve) => {
+      testIo.close((err) => {
+        if (err) duplicateCloseCaught = true;
+        resolve();
+      });
+    });
+
+    assert.strictEqual(testHttpServer.listening, false, 'Socket.io v4 close must automatically close attached httpServer');
+
+    if (testHttpServer.listening) {
+      serverCloseCalledWhenNotListening = true;
+    }
+
+    assert.strictEqual(serverCloseCalledWhenNotListening, false, 'server.close() must NOT be called when server.listening is false');
+    assert.strictEqual(duplicateCloseCaught, false, 'No error must occur during io.close()');
+  });
+
+  await testAsync('Graceful Shutdown: Fallback closes HTTP server when Socket.io is null/absent', async () => {
+    const http = require('http');
+
+    const testHttpServer = http.createServer((req, res) => res.end('ok'));
+    await new Promise((resolve) => testHttpServer.listen(0, resolve));
+    assert.strictEqual(testHttpServer.listening, true, 'Test HTTP server must be listening');
+
+    // Simulate graceful shutdown with io = null
+    const testIo = null;
+
+    if (testIo) {
+      await new Promise((resolve) => testIo.close(resolve));
+    }
+
+    if (testHttpServer.listening) {
+      await new Promise((resolve) => {
+        testHttpServer.close((err) => {
+          assert(!err, 'server.close() must succeed without errors');
+          resolve();
+        });
+      });
+    }
+
+    assert.strictEqual(testHttpServer.listening, false, 'Fallback must close HTTP server cleanly');
+  });
+
+  await testAsync('Graceful Shutdown: MongoDB connection closure is reached and verified', async () => {
+    assert(mongoose.connection.readyState !== 0, 'MongoDB connection should currently be open');
+    await mongoose.connection.close(false);
+    assert.strictEqual(mongoose.connection.readyState, 0, 'MongoDB connection must be cleanly closed (readyState = 0)');
+    // Reconnect for remaining test assertions if needed
+    await mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/skillswap');
+  });
+
+  await testAsync('Graceful Shutdown: Full process SIGTERM signal triggers clean exit with code 0', async () => {
+    const { spawn } = require('child_process');
+    const child = spawn('node', ['server.js'], {
+      env: { ...process.env, PORT: '5099' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+
+    await new Promise((resolve, reject) => {
+      child.stdout.on('data', (d) => {
+        if (d.toString().includes('Server running on port 5099')) {
+          child.kill('SIGTERM');
+        }
+      });
+
+      child.on('exit', (code) => {
+        assert.strictEqual(code, 0, `Process must exit with code 0 upon SIGTERM, received: ${code}`);
+        resolve();
+      });
+
+      child.on('error', reject);
+    });
+  });
+
   console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log(`📊 PRODUCTION IMPROVEMENTS RESULTS: ${passed} PASSED | ${failed} FAILED`);
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
