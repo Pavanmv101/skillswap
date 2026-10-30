@@ -13,6 +13,18 @@ export function getNotificationIcon(type) {
     case 'SESSION_SCHEDULED':  return '📅'
     case 'SESSION_RESCHEDULED':return '🔄'
     case 'SESSION_REMINDER':   return '⏰'
+    case 'VERIFICATION_SUBMITTED': return '📋'
+    case 'VERIFICATION_APPROVED':  return '🎓'
+    case 'VERIFICATION_REJECTED':  return '⚠️'
+    case 'ENDORSEMENT_RECEIVED':   return '⭐'
+    case 'LEARNING_PLAN_CREATED':  return '🎯'
+    case 'MILESTONE_ASSIGNED':     return '📌'
+    case 'MILESTONE_SUBMITTED':    return '📝'
+    case 'MILESTONE_APPROVED':     return '✅'
+    case 'MILESTONE_REVISION_REQUESTED': return '⚠️'
+    case 'ASSESSMENT_SUBMITTED':   return '📊'
+    case 'ASSESSMENT_EVALUATED':   return '📋'
+    case 'TRACK_COMPLETED':        return '🏆'
     default:                   return '🔔'
   }
 }
@@ -55,6 +67,11 @@ export default function Notifications() {
   function handleNotificationClick(n) {
     if (!n.isRead) {
       markAsRead(n._id)
+    }
+
+    if (n.type?.includes('MILESTONE') || n.type?.includes('LEARNING') || n.type?.includes('ASSESSMENT') || n.type?.includes('TRACK')) {
+      navigate('/learning')
+      return
     }
 
     if (n.relatedSwap) {

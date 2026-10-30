@@ -16,6 +16,7 @@ const notificationRoutes = require('./routes/notificationRoutes');
 const verificationRoutes = require('./routes/verificationRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const endorsementRoutes = require('./routes/endorsementRoutes');
+const learningRoutes = require('./routes/learningRoutes');
 
 // Import notification and reminder services
 const { setIO } = require('./services/notificationService');
@@ -69,6 +70,7 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/verification', verificationRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/endorsements', endorsementRoutes);
+app.use('/api/learning', learningRoutes);
 
 // Real-time Event Handlers
 io.on('connection', (socket) => {

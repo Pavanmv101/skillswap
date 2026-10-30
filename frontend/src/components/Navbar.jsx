@@ -62,6 +62,11 @@ export default function Navbar() {
     }
     setDropdownOpen(false)
 
+    if (n.type?.includes('MILESTONE') || n.type?.includes('LEARNING') || n.type?.includes('ASSESSMENT') || n.type?.includes('TRACK')) {
+      navigate('/learning')
+      return
+    }
+
     if (n.relatedSwap) {
       if (n.relatedSwap.status === 'accepted' && n.relatedSwap.roomId && n.type === 'SESSION_REMINDER') {
         navigate(`/room/${n.relatedSwap.roomId}`)
@@ -96,6 +101,9 @@ export default function Navbar() {
               <NavLink to="/swaps" onClick={() => setMobileOpen(false)} className="nav-swap-link">
                 My Swaps
                 {pendingSwapCount > 0 && <span className="nav-badge-pill">{pendingSwapCount}</span>}
+              </NavLink>
+              <NavLink to="/learning" onClick={() => setMobileOpen(false)}>
+                Learning 🎯
               </NavLink>
               <NavLink to="/profile" onClick={() => setMobileOpen(false)}>
                 Profile

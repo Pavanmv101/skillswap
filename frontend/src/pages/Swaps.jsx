@@ -256,7 +256,7 @@ export default function Swaps() {
                     </button>
                   )}
 
-                  {/* Active -> Video Call, Schedule, Complete */}
+                  {/* Active -> Video Call, Schedule, Complete, Learning */}
                   {tab === 'active' && (
                     <>
                       {s.roomId && (
@@ -264,6 +264,9 @@ export default function Swaps() {
                           🎥 Join Video Call
                         </Link>
                       )}
+                      <Link to={`/learning?swapId=${s._id}`} className="btn btn-outline btn-sm">
+                        🎯 Learning Track
+                      </Link>
                       <button
                         className="btn btn-muted btn-sm"
                         onClick={() => setScheduleTarget(s)}
@@ -280,14 +283,19 @@ export default function Swaps() {
                     </>
                   )}
 
-                  {/* Completed -> Rate */}
+                  {/* Completed -> Rate & Learning Track */}
                   {tab === 'completed' && (
-                    <button
-                      className="btn btn-primary btn-sm"
-                      onClick={() => setRatingTarget(s)}
-                    >
-                      ⭐ Write Review / Rate
-                    </button>
+                    <>
+                      <Link to={`/learning?swapId=${s._id}`} className="btn btn-outline btn-sm">
+                        🎯 Learning Track
+                      </Link>
+                      <button
+                        className="btn btn-primary btn-sm"
+                        onClick={() => setRatingTarget(s)}
+                      >
+                        ⭐ Write Review / Rate
+                      </button>
+                    </>
                   )}
                 </div>
               </div>

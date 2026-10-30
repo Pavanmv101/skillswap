@@ -14,6 +14,7 @@ import Room          from './pages/Room'
 import PublicProfile from './pages/PublicProfile'
 import Notifications from './pages/Notifications'
 import AdminVerifications from './pages/AdminVerifications'
+import LearningDashboard from './pages/LearningDashboard'
 
 function PrivateRoute({ children }) {
   const { token } = useAuth()
@@ -46,6 +47,7 @@ export default function App() {
                 <Route path="/room/:roomId"   element={<PrivateRoute><Room /></PrivateRoute>} />
                 <Route path="/user/:id"       element={<PrivateRoute><PublicProfile /></PrivateRoute>} />
                 <Route path="/notifications"  element={<PrivateRoute><Notifications /></PrivateRoute>} />
+                <Route path="/learning"       element={<PrivateRoute><LearningDashboard /></PrivateRoute>} />
                 <Route path="/admin"          element={<AdminRoute><AdminVerifications /></AdminRoute>} />
                 <Route path="*"               element={<Navigate to="/" replace />} />
               </Routes>

@@ -14,19 +14,23 @@ export default function Dashboard() {
   const [stats, setStats]     = useState(null)
   const [incomingSwaps, setIncomingSwaps] = useState([])
   const [activeSwaps, setActiveSwaps]     = useState([])
+  const [learningTracks, setLearningTracks] = useState([])
   const [loading, setLoading] = useState(true)
 
   async function loadDashboardData() {
     try {
-      const [profileRes, swapsRes, matchRes] = await Promise.all([
+      const [profileRes, swapsRes, matchRes, learningRes] = await Promise.all([
         api.get('/profile'),
         api.get('/swap'),
         api.get('/match'),
+        api.get('/learning/dashboard').catch(() => ({ data: { learning: [], stats: {} } })),
       ])
 
       const prof = profileRes.data
       const swaps = swapsRes.data || []
       const matches = matchRes.data.matches || []
+      const learning = learningRes.data?.learning || []
+      setLearningTracks(learning)
 
       setProfile(prof)
 
@@ -179,16 +183,56 @@ export default function Dashboard() {
                       )}
                     </div>
                   </div>
-                  <div className="session-actions">
+                  <div className="session-actions" style={{ display: 'flex', gap: '.5rem' }}>
+                    <Link to={`/learning?swapId=${s._id}`} className="btn btn-outline btn-sm">
+                      🎯 Learning
+                    </Link>
                     {s.roomId && (
                       <Link to={`/room/${s.roomId}`} className="btn btn-primary btn-sm shadow-glow">
-                        🎥 Join Video Call
+                        🎥 Join Call
                       </Link>
                     )}
                   </div>
                 </div>
               )
             })}
+          </div>
+        </div>
+      )}
+
+      {/* Peer Learning Progress Summary */}
+      {learningTracks.length > 0 && (
+        <div style={{ marginTop: '2.5rem' }}>
+          <div className="section-title-row">
+            <h3>🎯 My Learning Roadmaps ({learningTracks.length})</h3>
+            <Link to="/learning" className="link-subtle">Open learning center →</Link>
+          </div>
+          <div className="card-grid" style={{ marginTop: '.75rem' }}>
+            {learningTracks.slice(0, 3).map(t => (
+              <div className="card" key={t._id} style={{ padding: '1.1rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '.6rem' }}>
+                  <strong style={{ fontSize: '1.05rem' }}>{t.skillName}</strong>
+                  <span className={`badge ${t.status === 'completed' ? 'badge-green' : 'badge-blue'}`}>
+                    {t.status === 'completed' ? '✓ Mastered' : `${t.overallProgress}%`}
+                  </span>
+                </div>
+                <div style={{ background: 'rgba(255,255,255,0.08)', borderRadius: 999, height: 6, overflow: 'hidden', marginBottom: '.6rem' }}>
+                  <div
+                    style={{
+                      background: t.overallProgress === 100 ? '#10b981' : '#6366f1',
+                      width: `${t.overallProgress}%`,
+                      height: '100%',
+                    }}
+                  />
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '.78rem', color: 'var(--text-muted)' }}>
+                  <span>Coach: {t.instructor?.name}</span>
+                  <Link to={`/learning?trackId=${t._id}`} className="link-subtle">
+                    View Roadmap →
+                  </Link>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}

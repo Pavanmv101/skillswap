@@ -16,6 +16,7 @@ export default function PublicProfile() {
   const [myProfile, setMyProfile] = useState(null)
   const [ratings, setRatings] = useState([])
   const [endorsements, setEndorsements] = useState([])
+  const [achievements, setAchievements] = useState([])
   const [loading, setLoading] = useState(true)
   const [swapModalOpen, setSwapModalOpen] = useState(false)
   const [endorseModalOpen, setEndorseModalOpen] = useState(false)
@@ -25,16 +26,18 @@ export default function PublicProfile() {
 
   async function loadData() {
     try {
-      const [profileRes, ratingsRes, myProfileRes, endorsementsRes] = await Promise.all([
+      const [profileRes, ratingsRes, myProfileRes, endorsementsRes, achievementsRes] = await Promise.all([
         api.get(`/profile/${id}`),
         api.get(`/rating/user/${id}`),
         api.get('/profile').catch(() => ({ data: null })),
         api.get(`/endorsements/${id}`).catch(() => ({ data: [] })),
+        api.get(`/learning/achievements/${id}`).catch(() => ({ data: [] })),
       ])
       setProfile(profileRes.data)
       setRatings(ratingsRes.data || [])
       setMyProfile(myProfileRes?.data)
       setEndorsements(endorsementsRes.data?.endorsements || (Array.isArray(endorsementsRes.data) ? endorsementsRes.data : []))
+      setAchievements(achievementsRes.data || [])
     } catch (err) {
       setError('User profile not found')
     } finally {
@@ -228,6 +231,35 @@ export default function PublicProfile() {
                   {new Date(e.createdAt).toLocaleDateString([], { dateStyle: 'medium' })}
                 </div>
               </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Completed Learning Achievements Section */}
+      {achievements.length > 0 && (
+        <div className="card" style={{ marginTop: '1.5rem' }}>
+          <div className="section-title-row">
+            <h3 style={{ margin: 0, fontSize: '1.05rem' }}>
+              🏆 Completed Learning Roadmaps ({achievements.length})
+            </h3>
+            <span style={{ fontSize: '.82rem', color: '#10b981' }}>
+              Mastered through peer mentorship
+            </span>
+          </div>
+          <div className="tag-list" style={{ marginTop: '.75rem' }}>
+            {achievements.map((a, i) => (
+              <span className="tag" key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '.4rem' }}>
+                <span>{a.skillName}</span>
+                <span className="badge-verified-inline" style={{ background: 'rgba(16,185,129,0.2)' }}>
+                  ✓ 100% Mastered
+                </span>
+                {a.instructor?.name && (
+                  <small style={{ opacity: 0.75 }}>
+                    (Coached by {a.instructor.name})
+                  </small>
+                )}
+              </span>
             ))}
           </div>
         </div>

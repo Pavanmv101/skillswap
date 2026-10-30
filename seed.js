@@ -8,6 +8,7 @@ const Rating = require('./models/Rating');
 const Notification = require('./models/Notification');
 const SkillVerification = require('./models/SkillVerification');
 const Endorsement = require('./models/Endorsement');
+const LearningTrack = require('./models/LearningTrack');
 
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/skillswap';
 
@@ -120,6 +121,7 @@ async function seed() {
       await Rating.deleteMany({ $or: [{ rater: { $in: userIds } }, { ratee: { $in: userIds } }] });
       await Notification.deleteMany({ $or: [{ recipient: { $in: userIds } }, { sender: { $in: userIds } }] });
       await Endorsement.deleteMany({ $or: [{ endorser: { $in: userIds } }, { recipient: { $in: userIds } }] });
+      await LearningTrack.deleteMany({ $or: [{ learner: { $in: userIds } }, { instructor: { $in: userIds } }] });
       await SkillVerification.deleteMany({ user: { $in: userIds } });
       await SwapRequest.deleteMany({ $or: [{ fromUser: { $in: userIds } }, { toUser: { $in: userIds } }] });
       await User.deleteMany({ _id: { $in: userIds } });
@@ -340,6 +342,145 @@ async function seed() {
       swapRequest: completedSwap._id,
       comment: 'Superb React instructor. Explains state isolation and modern hooks effortlessly.',
     }).save();
+
+    // 9. LEARNING TRACKS & ASSESSMENTS (Phase 4)
+    // Aarav learning Python from Priya (Completed Track)
+    const aaravPythonTrack = new LearningTrack({
+      swapRequest: completedSwap._id,
+      learner: aarav._id,
+      instructor: priya._id,
+      skillName: 'Python',
+      skillCategory: 'Programming',
+      learningObjective: 'Master Python fundamentals, OOP, and data science essentials',
+      status: 'completed',
+      overallProgress: 100,
+      completedAt: new Date(Date.now() - 86400000),
+      milestones: [
+        {
+          title: 'Python Syntax & Data Structures',
+          description: 'Lists, dictionaries, sets, loops, and functional comprehensions.',
+          sequence: 1,
+          status: 'approved',
+          instructorApprovalStatus: 'approved',
+          completedAt: new Date(Date.now() - 86400000 * 5),
+          feedback: 'Flawless code structure and idiomatic Python usage.',
+        },
+        {
+          title: 'OOP & Modular Architecture in Python',
+          description: 'Classes, inheritance, dunder methods, and virtual environments.',
+          sequence: 2,
+          status: 'approved',
+          instructorApprovalStatus: 'approved',
+          completedAt: new Date(Date.now() - 86400000 * 3),
+          feedback: 'Solid object hierarchy and clean modular packaging.',
+        },
+        {
+          title: 'Data Analysis with Pandas & NumPy',
+          description: 'DataFrame manipulation, vector operations, and visualization.',
+          sequence: 3,
+          status: 'approved',
+          instructorApprovalStatus: 'approved',
+          completedAt: new Date(Date.now() - 86400000),
+          feedback: 'Great insights extracted from the dataset.',
+        },
+      ],
+      assessments: [
+        {
+          type: 'practical',
+          title: 'Sales Data Analysis Pipeline',
+          description: 'Analyze CSV transaction logs and generate aggregated monthly reporting.',
+          passingScore: 75,
+          instructions: 'Use pandas to group by categories and identify the top 5 revenue drivers.',
+          submissionText: 'Engineered pandas pipeline grouping by monthly SKU sales with matplot charts.',
+          evidenceUrl: 'https://github.com/aaravsharma/python-sales-analysis',
+          evaluationStatus: 'evaluated',
+          passed: true,
+          evaluatedAt: new Date(Date.now() - 86400000),
+          instructorFeedback: 'Accurate data aggregation and comprehensive summary report.',
+        },
+      ],
+    });
+    await aaravPythonTrack.save();
+
+    // Priya learning React from Aarav (In Progress Track: 67%)
+    const priyaReactTrack = new LearningTrack({
+      swapRequest: completedSwap._id,
+      learner: priya._id,
+      instructor: aarav._id,
+      skillName: 'React',
+      skillCategory: 'Programming',
+      learningObjective: 'Learn modern React 18, Hooks, and Component Architecture',
+      status: 'in_progress',
+      overallProgress: 67,
+      milestones: [
+        {
+          title: 'React Fundamentals & Component JSX',
+          description: 'Props, state, and unidirectional data flow in React 18.',
+          sequence: 1,
+          status: 'approved',
+          instructorApprovalStatus: 'approved',
+          completedAt: new Date(Date.now() - 86400000 * 4),
+          feedback: 'Clear mental model of component lifecycles and immutable state.',
+        },
+        {
+          title: 'Hooks Mastery (useState, useEffect, useMemo)',
+          description: 'Side-effects management and performance memoization.',
+          sequence: 2,
+          status: 'approved',
+          instructorApprovalStatus: 'approved',
+          completedAt: new Date(Date.now() - 86400000 * 2),
+          feedback: 'Proper dependency array handling and clean cleanup functions.',
+        },
+        {
+          title: 'Full-Stack SPA with Context API',
+          description: 'Build a peer task manager with global context and localStorage persistence.',
+          sequence: 3,
+          status: 'submitted',
+          instructorApprovalStatus: 'pending',
+          evidenceUrl: 'https://github.com/priyapatel/react-task-manager',
+          submissionNotes: 'Implemented context store with optimistic updates and responsive dark mode.',
+        },
+      ],
+      assessments: [
+        {
+          type: 'quiz',
+          title: 'React Core Principles & Hooks Quiz',
+          description: 'Test your understanding of component re-renders, virtual DOM, and hook rules.',
+          passingScore: 70,
+          questions: [
+            {
+              question: 'When does a React component re-render by default?',
+              options: [
+                'Only when explicitly triggered by window reload',
+                'Whenever its state or props change',
+                'Every 1000 milliseconds automatically',
+                'Only when a child component dismounts',
+              ],
+              correctOption: 1,
+            },
+            {
+              question: 'What is the purpose of the dependency array in useEffect?',
+              options: [
+                'To control when the effect re-runs based on value changes',
+                'To import external npm packages into the hook',
+                'To style the parent DOM container',
+                'To prevent asynchronous network fetches',
+              ],
+              correctOption: 0,
+            },
+          ],
+          attempts: [
+            {
+              attemptedAt: new Date(Date.now() - 86400000 * 2),
+              selectedAnswers: [1, 0],
+              score: 100,
+              passed: true,
+            },
+          ],
+        },
+      ],
+    });
+    await priyaReactTrack.save();
 
     console.log('✅ Database seeded successfully with demo profiles, swaps across all statuses, and verified ratings!');
     console.log('\nDemo User Accounts (all passwords: password123):');
