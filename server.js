@@ -21,42 +21,102 @@ const cronRoutes = require('./routes/cronRoutes');
 
 // Import notification and reminder services
 const { setIO } = require('./services/notificationService');
-const { initReminderScheduler } = require('./services/reminderService');
+const { initReminderScheduler, stopReminderScheduler } = require('./services/reminderService');
 
 const app = express();
 const server = http.createServer(app);
 
 // ── Production-Grade Trusted CORS Configuration ───────────────────────────
-const localDevOrigins = [
+const localDevOrigins = new Set([
   'http://localhost:3000',
   'http://localhost:3001',
   'http://localhost:5173',
   'http://127.0.0.1:3000',
   'http://127.0.0.1:3001',
   'http://127.0.0.1:5173',
-];
+]);
 
 const configuredClientUrls = process.env.CLIENT_URL
-  ? process.env.CLIENT_URL.split(',').map(u => u.trim().replace(/\/$/, ''))
+  ? process.env.CLIENT_URL.split(',').map(u => u.trim().replace(/\/$/, '')).filter(Boolean)
   : [];
 
-const allowedOrigins = [...localDevOrigins, ...configuredClientUrls];
+// Extract canonical SkillSwap project slugs from configured URLs or default to 'skillswap'
+const allowedVercelSlugs = new Set(['skillswap']);
+for (const rawUrl of configuredClientUrls) {
+  try {
+    const u = new URL(rawUrl);
+    if (u.hostname.endsWith('.vercel.app')) {
+      const parts = u.hostname.split('.');
+      if (parts.length === 3) {
+        allowedVercelSlugs.add(parts[0].toLowerCase());
+      }
+    }
+  } catch (e) {
+    // ignore malformed configured URL entry
+  }
+}
 
-const corsOriginDelegate = (origin, callback) => {
+function isAllowedOrigin(origin) {
   // Allow requests with no origin (curl, server-to-server, native mobile)
-  if (!origin) return callback(null, true);
+  if (!origin) return true;
 
-  if (process.env.NODE_ENV !== 'production' || configuredClientUrls.length === 0) {
-    // In local development or testing, permit all
-    return callback(null, true);
+  // Local development / non-production environment: permit localhost and dev ports
+  if (process.env.NODE_ENV !== 'production') {
+    if (localDevOrigins.has(origin)) return true;
+    if (configuredClientUrls.length === 0) return true;
   }
 
-  // In production, match trusted client URLs or Vercel preview URLs if configured
-  const isAllowed = allowedOrigins.some(allowed =>
-    origin === allowed || (allowed.includes('.vercel.app') && origin.endsWith('.vercel.app'))
-  );
+  // Parse origin strictly using URL API
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(origin);
+  } catch (err) {
+    return false; // Malformed or invalid origin URL
+  }
 
-  if (isAllowed) {
+  // Require https in production
+  if (process.env.NODE_ENV === 'production' && parsedUrl.protocol !== 'https:') {
+    return false;
+  }
+
+  // Check exact match against configured client URLs (e.g. custom domain https://skillswap.com)
+  const normalizedOrigin = parsedUrl.origin;
+  if (configuredClientUrls.includes(normalizedOrigin)) {
+    return true;
+  }
+
+  // Validate Vercel preview deployments strictly
+  const hostname = parsedUrl.hostname.toLowerCase();
+  
+  // Must end with exactly .vercel.app and have exactly 3 parts: <subdomain>.vercel.app
+  const hostParts = hostname.split('.');
+  if (hostParts.length === 3 && hostParts[1] === 'vercel' && hostParts[2] === 'app') {
+    const subdomain = hostParts[0];
+
+    // Must be valid alphanumeric with hyphens (RFC 1123 DNS label)
+    if (!/^[a-z0-9-]+$/.test(subdomain)) {
+      return false;
+    }
+
+    // Do not permit non-standard ports on Vercel preview URLs
+    if (parsedUrl.port && parsedUrl.port !== '443') {
+      return false;
+    }
+
+    // Check if subdomain matches any approved SkillSwap project slug:
+    // e.g. 'skillswap' or preview formats like 'skillswap-git-*' or 'skillswap-*'
+    for (const slug of allowedVercelSlugs) {
+      if (subdomain === slug || subdomain.startsWith(`${slug}-`)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+const corsOriginDelegate = (origin, callback) => {
+  if (isAllowedOrigin(origin)) {
     callback(null, true);
   } else {
     callback(new Error(`Origin ${origin} not allowed by SkillSwap CORS policy`));
@@ -66,9 +126,7 @@ const corsOriginDelegate = (origin, callback) => {
 // Initialize Socket.io for WebRTC signaling and real-time notifications
 const io = new Server(server, {
   cors: {
-    origin: process.env.NODE_ENV === 'production' && configuredClientUrls.length > 0
-      ? (origin, cb) => corsOriginDelegate(origin, cb)
-      : '*',
+    origin: corsOriginDelegate,
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     credentials: true,
   },
@@ -124,6 +182,18 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/endorsements', endorsementRoutes);
 app.use('/api/learning', learningRoutes);
 app.use('/api/cron', cronRoutes);
+
+// Centralized error handling middleware (handles CORS rejection with 403 Forbidden)
+app.use((err, req, res, next) => {
+  if (err && err.message && err.message.includes('CORS policy')) {
+    return res.status(403).json({ message: err.message });
+  }
+  console.error('[Server Error]', err);
+  res.status(500).json({
+    message: 'Internal server error',
+    error: process.env.NODE_ENV === 'production' ? undefined : err.message,
+  });
+});
 
 // Real-time Event Handlers
 io.on('connection', (socket) => {
@@ -204,11 +274,82 @@ io.on('connection', (socket) => {
   });
 });
 
-// Initialize background session reminder scheduler
-initReminderScheduler();
-
 const PORT = process.env.PORT || 5001;
 
-server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+if (require.main === module) {
+  // Initialize background session reminder scheduler
+  initReminderScheduler();
+
+  server.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+}
+
+// ── Graceful Shutdown Handler (SIGTERM & SIGINT) ──────────────────────────
+let isShuttingDown = false;
+
+const gracefulShutdown = async (signal = 'SIGTERM') => {
+  if (isShuttingDown) {
+    console.log(`[Server] Shutdown already in progress. Ignoring duplicate ${signal} signal.`);
+    return;
+  }
+  isShuttingDown = true;
+  console.log(`[Server] ${signal} signal received. Starting graceful shutdown sequence...`);
+
+  // Force exit fallback timer (10 seconds) to prevent hanging indefinitely
+  const forceExitTimer = setTimeout(() => {
+    console.error('[Server] Graceful shutdown timed out after 10s. Forcing exit.');
+    process.exit(1);
+  }, 10000);
+  forceExitTimer.unref();
+
+  try {
+    // 1. Stop background reminder scheduler
+    stopReminderScheduler();
+
+    // 2. Close Socket.io server to stop real-time events and disconnect peers
+    if (io) {
+      console.log('[Server] Closing Socket.io engine...');
+      await new Promise((resolve) => {
+        io.close(() => {
+          console.log('[Server] Socket.io connections closed.');
+          resolve();
+        });
+      });
+    }
+
+    // 3. Stop accepting new HTTP requests and wait for in-flight requests
+    console.log('[Server] Closing HTTP server...');
+    await new Promise((resolve, reject) => {
+      server.close((err) => {
+        if (err) return reject(err);
+        console.log('[Server] HTTP server stopped accepting connections.');
+        resolve();
+      });
+    });
+
+    // 4. Close MongoDB connection
+    console.log('[Server] Closing MongoDB connection...');
+    await mongoose.connection.close(false);
+    console.log('[Server] MongoDB connection closed cleanly.');
+
+    clearTimeout(forceExitTimer);
+    console.log('[Server] Graceful shutdown complete. Exiting process.');
+    process.exit(0);
+  } catch (err) {
+    console.error('[Server] Error during graceful shutdown:', err);
+    clearTimeout(forceExitTimer);
+    process.exit(1);
+  }
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+module.exports = {
+  app,
+  server,
+  io,
+  isAllowedOrigin,
+  gracefulShutdown,
+};

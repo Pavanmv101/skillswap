@@ -69,10 +69,17 @@ const notificationSchema = new mongoose.Schema(
 notificationSchema.index({ recipient: 1, isRead: 1, createdAt: -1 });
 notificationSchema.index({ recipient: 1, createdAt: -1 });
 
-// Prevent duplicate reminder notifications for the same swap and recipient
+// Database-level uniqueness: prevent duplicate reminder notifications for the same swap and recipient across clustered instances
 notificationSchema.index(
   { relatedSwap: 1, type: 1, recipient: 1 },
-  { sparse: true }
+  {
+    name: 'unique_session_reminder_per_swap',
+    unique: true,
+    partialFilterExpression: {
+      type: 'SESSION_REMINDER',
+      relatedSwap: { $type: 'objectId' },
+    },
+  }
 );
 
 module.exports = mongoose.model('Notification', notificationSchema);

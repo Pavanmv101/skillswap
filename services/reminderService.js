@@ -56,16 +56,24 @@ async function checkUpcomingSessionReminders() {
       });
 
       if (!fromReminderExists) {
-        await createAndEmitNotification({
-          recipient: swap.fromUser._id,
-          sender: swap.toUser._id,
-          type: 'SESSION_REMINDER',
-          title: 'Upcoming Session Reminder ⏰',
-          message: `Your video call with ${swap.toUser.name} (${swap.offeredSkill} ⇄ ${swap.wantedSkill}) starts soon at ${timeFormatted}.`,
-          relatedSwap: swap._id,
-        });
-        sentCount++;
-        console.log(`[Reminder Service] Sent reminder to ${swap.fromUser.name} for swap ${swap._id}`);
+        try {
+          await createAndEmitNotification({
+            recipient: swap.fromUser._id,
+            sender: swap.toUser._id,
+            type: 'SESSION_REMINDER',
+            title: 'Upcoming Session Reminder ⏰',
+            message: `Your video call with ${swap.toUser.name} (${swap.offeredSkill} ⇄ ${swap.wantedSkill}) starts soon at ${timeFormatted}.`,
+            relatedSwap: swap._id,
+          });
+          sentCount++;
+          console.log(`[Reminder Service] Sent reminder to ${swap.fromUser.name} for swap ${swap._id}`);
+        } catch (err) {
+          if (err.code === 11000 || (err.name === 'MongoServerError' && err.code === 11000)) {
+            console.log(`[Reminder Service] Duplicate reminder caught by database constraint for swap ${swap._id} (recipient: ${swap.fromUser._id})`);
+          } else {
+            console.error(`[Reminder Service] Error creating reminder for swap ${swap._id}:`, err);
+          }
+        }
       }
 
       // 2. Check & send reminder for toUser
@@ -76,16 +84,24 @@ async function checkUpcomingSessionReminders() {
       });
 
       if (!toReminderExists) {
-        await createAndEmitNotification({
-          recipient: swap.toUser._id,
-          sender: swap.fromUser._id,
-          type: 'SESSION_REMINDER',
-          title: 'Upcoming Session Reminder ⏰',
-          message: `Your video call with ${swap.fromUser.name} (${swap.wantedSkill} ⇄ ${swap.offeredSkill}) starts soon at ${timeFormatted}.`,
-          relatedSwap: swap._id,
-        });
-        sentCount++;
-        console.log(`[Reminder Service] Sent reminder to ${swap.toUser.name} for swap ${swap._id}`);
+        try {
+          await createAndEmitNotification({
+            recipient: swap.toUser._id,
+            sender: swap.fromUser._id,
+            type: 'SESSION_REMINDER',
+            title: 'Upcoming Session Reminder ⏰',
+            message: `Your video call with ${swap.fromUser.name} (${swap.wantedSkill} ⇄ ${swap.offeredSkill}) starts soon at ${timeFormatted}.`,
+            relatedSwap: swap._id,
+          });
+          sentCount++;
+          console.log(`[Reminder Service] Sent reminder to ${swap.toUser.name} for swap ${swap._id}`);
+        } catch (err) {
+          if (err.code === 11000 || (err.name === 'MongoServerError' && err.code === 11000)) {
+            console.log(`[Reminder Service] Duplicate reminder caught by database constraint for swap ${swap._id} (recipient: ${swap.toUser._id})`);
+          } else {
+            console.error(`[Reminder Service] Error creating reminder for swap ${swap._id}:`, err);
+          }
+        }
       }
     }
 
@@ -118,6 +134,7 @@ function stopReminderScheduler() {
   if (intervalId) {
     clearInterval(intervalId);
     intervalId = null;
+    console.log('[Reminder Service] Reminder scheduler interval stopped');
   }
 }
 
