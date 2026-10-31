@@ -67,3 +67,36 @@ exports.login = async (req, res) => {
     res.status(500).json({ message: 'Server error', error: err.message });
   }
 };
+
+// POST /api/auth/seed-demo
+// Safely seeds the demo student and admin accounts if they do not already exist
+exports.seedDemoAccounts = async (req, res) => {
+  try {
+    const priya = await User.findOne({ email: 'priya@skillswap.com' });
+    if (priya) {
+      return res.status(200).json({
+        message: 'Demo accounts already exist in the database',
+        seeded: false,
+      });
+    }
+
+    const { seedDemoData } = require('../seed');
+    await seedDemoData(false);
+
+    res.status(201).json({
+      message: 'Demo accounts seeded successfully!',
+      seeded: true,
+      demoUsers: [
+        'priya@skillswap.com',
+        'aarav@skillswap.com',
+        'rohan@skillswap.com',
+        'sneha@skillswap.com',
+        'admin@skillswap.com',
+      ],
+    });
+  } catch (err) {
+    console.error('[Auth] Error seeding demo accounts:', err);
+    res.status(500).json({ message: 'Failed to seed demo accounts', error: err.message });
+  }
+};
+

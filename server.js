@@ -154,8 +154,21 @@ io.use((socket, next) => {
   next();
 });
 
-// Connect to MongoDB
-connectDB();
+// Connect to MongoDB and auto-seed demo accounts if missing (e.g. on fresh Atlas deployment)
+connectDB().then(async () => {
+  try {
+    const User = require('./models/User');
+    const demoUser = await User.findOne({ email: 'priya@skillswap.com' });
+    if (!demoUser) {
+      console.log('[Auto-Seed] Demo accounts not detected in database. Initializing demo accounts...');
+      const { seedDemoData } = require('./seed');
+      await seedDemoData(false);
+      console.log('[Auto-Seed] Demo accounts initialized successfully!');
+    }
+  } catch (err) {
+    console.warn('[Auto-Seed] Note checking/initializing demo accounts:', err.message);
+  }
+});
 
 app.use(cors({ origin: corsOriginDelegate, credentials: true }));
 app.use(express.json({ limit: '10mb' }));

@@ -107,15 +107,12 @@ const demoUsers = [
   }
 ];
 
-async function seed() {
-  if (process.env.NODE_ENV === 'production' && !process.env.ALLOW_PROD_SEED) {
-    console.error('❌ SEED ABORTED: seed.js cannot run in production unless ALLOW_PROD_SEED=true is explicitly set.');
-    process.exit(1);
-  }
-
+async function seedDemoData(disconnectOnComplete = false) {
   try {
-    await mongoose.connect(MONGO_URI);
-    console.log('Connected to MongoDB for seeding...');
+    if (mongoose.connection.readyState === 0) {
+      await mongoose.connect(MONGO_URI);
+      console.log('Connected to MongoDB for seeding...');
+    }
 
     // Clean up previous seeded data safely (only target the 4 demo emails)
     const demoEmails = demoUsers.map(u => u.email);
@@ -500,12 +497,28 @@ async function seed() {
     console.log('  - Outgoing Pending from Aarav: Aarav -> Priya')
     console.log('  - Cancelled: Rohan -> Priya')
 
-    await mongoose.disconnect();
-    process.exit(0);
+    if (disconnectOnComplete) {
+      await mongoose.disconnect();
+    }
+    return true;
   } catch (err) {
     console.error('Seeding error:', err);
-    process.exit(1);
+    throw err;
   }
 }
 
-seed();
+if (require.main === module) {
+  if (process.env.NODE_ENV === 'production' && !process.env.ALLOW_PROD_SEED) {
+    console.error('❌ SEED ABORTED: seed.js cannot run in production unless ALLOW_PROD_SEED=true is explicitly set.');
+    process.exit(1);
+  }
+
+  seedDemoData(true)
+    .then(() => process.exit(0))
+    .catch(() => process.exit(1));
+}
+
+module.exports = {
+  seedDemoData,
+  demoUsers,
+};
