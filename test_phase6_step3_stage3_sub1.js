@@ -39,6 +39,7 @@ const {
   assertNoAcceptedSwapConflicts,
   ReservationConflictError,
   withTransaction,
+  validateTransactionSession,
   isTransactionSupported,
 } = require('./services/reservationService');
 
@@ -253,24 +254,28 @@ async function runTests() {
         // In standalone mode, verify that a conflict/failure halfway rolls back/cleans up any partial reservations
         const uExisting = new mongoose.Types.ObjectId();
         const swapPrior = new mongoose.Types.ObjectId();
-        await acquireReservations({
-          reservations: [{ participant: uExisting, exchangeType: 'bilateral', exchangeId: swapPrior, skillBeingTaught: 'Java' }],
-          session: null,
+        await withTransaction(async (session) => {
+          await acquireReservations({
+            reservations: [{ participant: uExisting, exchangeType: 'bilateral', exchangeId: swapPrior, skillBeingTaught: 'Java' }],
+            session,
+          });
         });
 
         try {
-          await assert.rejects(
-            async () => {
-              await acquireReservations({
-                reservations: [
-                  { participant: uA, exchangeType: 'bilateral', exchangeId: swapId, skillBeingTaught: 'Python' },
-                  { participant: uExisting, exchangeType: 'bilateral', exchangeId: swapId, skillBeingTaught: 'React' },
-                ],
-                session: null,
-              });
-            },
-            ReservationConflictError
-          );
+          await withTransaction(async (session) => {
+            await assert.rejects(
+              async () => {
+                await acquireReservations({
+                  reservations: [
+                    { participant: uA, exchangeType: 'bilateral', exchangeId: swapId, skillBeingTaught: 'Python' },
+                    { participant: uExisting, exchangeType: 'bilateral', exchangeId: swapId, skillBeingTaught: 'React' },
+                  ],
+                  session,
+                });
+              },
+              ReservationConflictError
+            );
+          });
         } finally {
           await releaseReservations({ exchangeId: swapPrior });
         }
@@ -882,6 +887,114 @@ async function runTests() {
           /Invalid participant ID provided/
         );
       });
+    });
+
+    await test('13. Active multi-document transaction is accepted by validateTransactionSession and assertNoAcceptedSwapConflicts', async () => {
+      const u1 = await createTestUser({ name: 'User_ActiveTxCheck' });
+      if (isTransactionSupported()) {
+        const txSession = await mongoose.startSession();
+        txSession.startTransaction();
+        try {
+          const state = validateTransactionSession(txSession);
+          assert.strictEqual(state.isTransaction, true);
+          assert.strictEqual(state.isStandaloneFallback, false);
+
+          const conflictRes = await assertNoAcceptedSwapConflicts({
+            participantIds: [u1._id],
+            session: txSession,
+          });
+          assert.strictEqual(conflictRes.hasConflict, false);
+          await txSession.commitTransaction();
+        } finally {
+          await txSession.endSession();
+        }
+      } else {
+        // On standalone topology, verify validateTransactionSession strictly validates active transaction contract
+        const mockTxSession = {
+          inTransaction: () => true,
+          hasEnded: false,
+          endSession: () => {},
+        };
+        const state = validateTransactionSession(mockTxSession);
+        assert.strictEqual(state.isTransaction, true);
+        assert.strictEqual(state.isStandaloneFallback, false);
+
+        // Also verify assertNoAcceptedSwapConflicts accepts active transaction contract without throwing contract errors
+        // (passing valid session via withTransaction)
+        await withTransaction(async (session) => {
+          const conflictRes = await assertNoAcceptedSwapConflicts({
+            participantIds: [u1._id],
+            session,
+          });
+          assert.strictEqual(conflictRes.hasConflict, false);
+        });
+      }
+    });
+
+    await test('14. Session exists but no transaction is active: rejected in transaction-required path', async () => {
+      const u1 = await createTestUser({ name: 'User_NoTxCheck' });
+      const rawSession = await mongoose.startSession();
+
+      try {
+        // Raw session without active transaction or fallback tag must be rejected
+        assert.throws(
+          () => validateTransactionSession(rawSession),
+          /Session exists but has no active transaction|A MongoDB multi-document transaction must be active/
+        );
+
+        await assert.rejects(
+          async () => {
+            await assertNoAcceptedSwapConflicts({ participantIds: [u1._id], session: rawSession });
+          },
+          /Session exists but has no active transaction|A MongoDB multi-document transaction must be active/
+        );
+      } finally {
+        await rawSession.endSession();
+      }
+    });
+
+    await test('15. Standalone development/test fallback is explicitly identified and documented', async () => {
+      await withTransaction(async (session) => {
+        if (!isTransactionSupported()) {
+          // Explicit standalone fallback must be tagged
+          assert.strictEqual(session.isStandaloneFallback, true);
+          const state = validateTransactionSession(session);
+          assert.strictEqual(state.isStandaloneFallback, true);
+          assert.strictEqual(state.isTransaction, false);
+        } else {
+          assert.strictEqual(session.inTransaction(), true);
+          const state = validateTransactionSession(session);
+          assert.strictEqual(state.isTransaction, true);
+        }
+      });
+    });
+
+    await test('16. Production cannot use the standalone fallback even if session has isStandaloneFallback', async () => {
+      const origEnv = process.env.NODE_ENV;
+      const fakeFallbackSession = await mongoose.startSession();
+      fakeFallbackSession.isStandaloneFallback = true;
+
+      try {
+        process.env.NODE_ENV = 'production';
+        if (!isTransactionSupported()) {
+          // validateTransactionSession strictly rejects fallback in production
+          assert.throws(
+            () => validateTransactionSession(fakeFallbackSession),
+            /non-transactional standalone fallback is forbidden/
+          );
+
+          // withTransaction strictly fails fast in production
+          await assert.rejects(
+            async () => {
+              await withTransaction(async () => {});
+            },
+            /multi-document transactions are required in production/
+          );
+        }
+      } finally {
+        process.env.NODE_ENV = origEnv;
+        await fakeFallbackSession.endSession();
+      }
     });
 
   } finally {

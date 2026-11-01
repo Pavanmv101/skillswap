@@ -65,10 +65,11 @@ async function withTransaction(callback) {
       );
     }
     // Standalone fallback: permitted for development and testing environments only.
-    // Propagates an active ClientSession so session contracts in queries and writes are strictly satisfied.
+    // Propagates an active ClientSession explicitly tagged as non-transactional standalone fallback.
     // Note: Non-transactional fallback relies on database unique indexes and compensating deletes,
     // which do NOT provide ACID multi-document atomicity in the event of abnormal process termination.
     const session = await mongoose.startSession();
+    session.isStandaloneFallback = true;
     try {
       const result = await callback(session);
       return result;
@@ -96,12 +97,23 @@ async function withTransaction(callback) {
 }
 
 /**
- * Validates that a provided session is a valid, active MongoDB ClientSession.
+ * Validates the transaction-state contract of a provided session.
+ *
+ * Distinguishes clearly between:
+ * 1. An active multi-document transaction (session.inTransaction() === true).
+ * 2. An explicitly documented, non-production standalone fallback (session.isStandaloneFallback === true).
+ * 3. Invalid, ended, or inactive sessions (which are strictly rejected).
+ *
+ * In production, multi-document transactions are mandatory; standalone fallback is forbidden.
+ * In transaction-supported environments (Replica Set / Sharded), an active transaction is mandatory.
  *
  * @param {any} session
- * @throws {Error} If session is missing, ended, or invalid
+ * @param {Object} [options]
+ * @param {boolean} [options.requireActiveTransaction=true] - When true, enforces active transaction or non-production fallback
+ * @returns {{ isTransaction: boolean, isStandaloneFallback: boolean }}
+ * @throws {Error} If session contract is violated
  */
-function validateTransactionSession(session) {
+function validateTransactionSession(session, { requireActiveTransaction = true } = {}) {
   if (!session) {
     throw new Error('A valid active MongoDB transaction session is required');
   }
@@ -117,6 +129,42 @@ function validateTransactionSession(session) {
   if (session.hasEnded) {
     throw new Error('A valid active MongoDB transaction session is required; session has already ended');
   }
+
+  const inTx = typeof session.inTransaction === 'function' ? session.inTransaction() : false;
+
+  if (inTx) {
+    return { isTransaction: true, isStandaloneFallback: false };
+  }
+
+  // Session exists but no transaction is active (session.inTransaction() === false)
+  if (!requireActiveTransaction) {
+    return { isTransaction: false, isStandaloneFallback: false };
+  }
+
+  // If the cluster supports transactions, an active transaction is strictly mandatory
+  if (isTransactionSupported()) {
+    throw new Error(
+      'A MongoDB multi-document transaction must be active on the session (session.inTransaction() is false). Call session.startTransaction() before executing transaction-guarded operations.'
+    );
+  }
+
+  // If the cluster does NOT support transactions (standalone):
+  // 1. Production must fail fast — non-transactional fallback is strictly forbidden in production
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(
+      'MongoDB multi-document transactions are required in production; non-transactional standalone fallback is forbidden'
+    );
+  }
+
+  // 2. In non-production standalone development/test environments, only accept sessions
+  //    that were explicitly created by withTransaction() as a documented standalone fallback
+  if (!session.isStandaloneFallback) {
+    throw new Error(
+      'Session exists but has no active transaction. Standalone non-transactional execution is permitted in development/test only when explicitly managed via withTransaction() fallback (session.isStandaloneFallback is not set)'
+    );
+  }
+
+  return { isTransaction: false, isStandaloneFallback: true };
 }
 
 /**
@@ -222,9 +270,7 @@ async function assertNoAcceptedSwapConflicts({ participantIds = [], excludeSwapI
  * @returns {Promise<{ success: boolean, count: number, reservations: Array }>}
  */
 async function acquireReservations({ reservations = [], session = undefined }) {
-  if (session === undefined) {
-    throw new Error('A MongoDB transaction session is required to acquire reservations');
-  }
+  validateTransactionSession(session);
 
   if (!Array.isArray(reservations) || reservations.length === 0) {
     return { success: true, count: 0, reservations: [] };
@@ -498,6 +544,7 @@ module.exports = {
   ReservationConflictError,
   isTransactionSupported,
   withTransaction,
+  validateTransactionSession,
   assertNoAcceptedSwapConflicts,
   acquireReservations,
   releaseReservations,
