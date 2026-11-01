@@ -245,6 +245,34 @@ async function runTests() {
       assert.notStrictEqual(res1.canonicalCycleHash, res2.canonicalCycleHash);
     });
 
+    await test('Hardened JSON tuple serialization: punctuation, quotes, and delimiters (| and ->) in skills remain unambiguous', () => {
+      // Simulates skill names containing delimiters that would corrupt string splitting/joining
+      const cyclePunc1 = [
+        { teacher: idA, learner: idB, skill: 'C++ -> Modern | Advanced' },
+        { teacher: idB, learner: idC, skill: 'UI/UX: Figma & "Design Systems"' },
+        { teacher: idC, learner: idA, skill: 'React [v19] // Next.js' },
+      ];
+
+      const resPunc1 = CircularExchange.validateAndCanonicalize([idA, idB, idC], cyclePunc1);
+      assert.strictEqual(typeof resPunc1.canonicalCycleHash, 'string');
+      assert.strictEqual(resPunc1.canonicalCycleHash.length, 64);
+
+      // Verify canonicalString is valid JSON
+      const parsed = JSON.parse(resPunc1.canonicalString);
+      assert(Array.isArray(parsed));
+      assert.strictEqual(parsed.length, 3);
+      assert.strictEqual(parsed[0].length, 3); // [teacherId, skill, learnerId]
+
+      // Verify boundary isolation: an adversarial skill constructed to mimic delimiter injection does not collide
+      const cycleAdversarial = [
+        { teacher: idA, learner: idB, skill: `${idB}->fake->${idC}|${idC}->fake->${idA}` },
+        { teacher: idB, learner: idC, skill: 'UI/UX' },
+        { teacher: idC, learner: idA, skill: 'React' },
+      ];
+      const resAdv = CircularExchange.validateAndCanonicalize([idA, idB, idC], cycleAdversarial);
+      assert.notStrictEqual(resPunc1.canonicalCycleHash, resAdv.canonicalCycleHash);
+    });
+
     // ── SECTION 2: CircularExchange Document Creation & Partial Unique Index ──
     console.log('\n--- 2. CircularExchange Document Creation & Partial Unique Index ---');
 

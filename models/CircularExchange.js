@@ -285,10 +285,14 @@ circularExchangeSchema.statics.validateAndCanonicalize = function (participantId
     throw new Error('Legs do not form a closed 3-way circular loop');
   }
 
-  // 6. Serialize directed edges to unambiguous canonical string
-  const canonicalString = orderedLegs
-    .map(e => `${(e.rawLeg.teacher?._id || e.rawLeg.teacher).toString()}->${e.skill}->${e.learner}`)
-    .join('|');
+  // 6. Serialize directed edges to unambiguous canonical JSON string over ordered tuples
+  // Tuples format: [[teacherId, normalizedSkill, learnerId], ...]
+  const canonicalTuples = orderedLegs.map(e => [
+    (e.rawLeg.teacher?._id || e.rawLeg.teacher).toString(),
+    e.skill,
+    e.learner.toString(),
+  ]);
+  const canonicalString = JSON.stringify(canonicalTuples);
 
   const canonicalCycleHash = crypto.createHash('sha256').update(canonicalString).digest('hex');
 
