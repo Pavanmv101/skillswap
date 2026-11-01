@@ -205,7 +205,7 @@ async function createCircularProposal(req, res) {
       skill: leg.skill.trim(),
       category: leg.category ? leg.category.trim() : 'General',
       teacherLevel: leg.teacherLevel || 'Intermediate',
-      learnerLevel: leg.learnerLevel || 'Beginner',
+      learnerLevel: leg.learnerLevel !== undefined ? leg.learnerLevel : null,
       status: 'pending',
     }));
 

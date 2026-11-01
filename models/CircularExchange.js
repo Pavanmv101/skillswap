@@ -50,7 +50,7 @@ const circularLegSchema = new mongoose.Schema(
     learnerLevel: {
       type: String,
       enum: ['Beginner', 'Intermediate', 'Advanced'],
-      default: 'Beginner',
+      default: null,
     },
     status: {
       type: String,

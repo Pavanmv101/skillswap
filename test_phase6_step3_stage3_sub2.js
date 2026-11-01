@@ -279,6 +279,46 @@ async function runTests() {
     assert.strictEqual(outboxEvents[0].type, 'CIRCULAR_SWAP_PROPOSED');
   });
 
+  await test('Proposal creation with null learnerLevel: preserves null through backend validation and database persistence without silently converting to Beginner', async () => {
+    const uA = await createTestUser({ name: 'Alice_NullLvl' });
+    const uB = await createTestUser({ name: 'Bob_NullLvl' });
+    const uC = await createTestUser({ name: 'Charlie_NullLvl' });
+
+    const legs = buildValid3CycleLegs(uA, uB, uC, ['Painting', 'Sculpting', 'Ceramics']);
+    // Explicitly set learnerLevel to null on leg 0 and leg 2, and 'Intermediate' on leg 1
+    legs[0].learnerLevel = null;
+    legs[1].learnerLevel = 'Intermediate';
+    legs[2].learnerLevel = null;
+
+    const req = {
+      userId: uA._id.toString(),
+      body: {
+        legs,
+        cycleScore: 92,
+      },
+    };
+    const res = mockRes();
+
+    await createCircularProposal(req, res);
+
+    assert.strictEqual(res.statusCode, 201, `Expected 201 Created, got ${res.statusCode}: ${JSON.stringify(res.body)}`);
+    assert(res.body._id, 'Expected returned proposal to have _id');
+    createdCycleIds.push(res.body._id);
+
+    const proposal = await CircularExchange.findById(res.body._id);
+    assert.strictEqual(proposal.status, 'proposed');
+    assert.strictEqual(proposal.legs.length, 3);
+
+    // Verify legs preserve exact learnerLevel values without defaulting to 'Beginner'
+    const leg0 = proposal.legs.find(l => l.teacher.toString() === uA._id.toString());
+    const leg1 = proposal.legs.find(l => l.teacher.toString() === uB._id.toString());
+    const leg2 = proposal.legs.find(l => l.teacher.toString() === uC._id.toString());
+
+    assert.strictEqual(leg0.learnerLevel, null, 'Expected leg 0 learnerLevel to be null');
+    assert.strictEqual(leg1.learnerLevel, 'Intermediate', 'Expected leg 1 learnerLevel to be Intermediate');
+    assert.strictEqual(leg2.learnerLevel, null, 'Expected leg 2 learnerLevel to be null');
+  });
+
   // ─────────────────────────────────────────────────────────────────────────────
   // 2. INVALID CYCLE STRUCTURE REJECTION
   // ─────────────────────────────────────────────────────────────────────────────
