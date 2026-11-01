@@ -1,5 +1,5 @@
 /**
- * Phase 6 — Advanced Skill Exchange Algorithm (Step 3 - Substage 3.4.1.2)
+ * Phase 6 — Advanced Skill Exchange Algorithm (Step 3 - Substage 3.4.1.4)
  * controllers/circularSchedulingController.js
  *
  * Implements independent scheduling and rescheduling for the 3 child legs
@@ -10,7 +10,7 @@
  * - Stale or missing proposalId rejected with HTTP 409 Conflict without state mutation.
  * - Repeated confirmation is idempotent: returns HTTP 200 with zero duplicate history or outbox events.
  * - Revalidates teacher and learner availability against User.availabilitySlots at confirmation time (HTTP 409 on withdrawal).
- * - Authoritative UTC timezone evaluation (no local/UTC dual check).
+ * - Timezone-aware availability evaluation: converts UTC instant to each user's specific IANA timezone (Intl.DateTimeFormat).
  * - Mutual confirmation required: child SwapRequest.scheduledAt is ONLY populated on confirmation.
  * - Double-booking prevention across both bilateral and circular sessions (±30m window).
  * - Schedule history preserved in parent CircularExchange leg with proposalId references.
@@ -28,32 +28,86 @@ const User = require('../models/User');
 const OutboxEvent = require('../models/OutboxEvent');
 const { withTransaction, isTransactionSupported } = require('../services/reservationService');
 
-const DAYS_OF_WEEK = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const COLLISION_WINDOW_MS = 30 * 60 * 1000; // ±30 minutes
 
 /**
- * Validates whether a proposed date falls within a user's configured availability slots.
- * Evaluates strictly in authoritative UTC representation to prevent timezone/day-boundary drift.
- * If availabilitySlots is empty or unconfigured, returns true (no restrictions).
+ * Validates whether an input is a valid IANA timezone identifier.
+ * Uses standard Intl.DateTimeFormat without extra dependencies.
  *
- * @param {Date} date
- * @param {Array<{ day: string, from: string, to: string }>} slots
+ * @param {string} tz
  * @returns {boolean}
  */
-function isTimeWithinSlots(date, slots) {
+function isValidIANATimezone(tz) {
+  if (!tz || typeof tz !== 'string') return false;
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: tz });
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+/**
+ * Extracts local weekday name and HH:MM in a specific IANA timezone for a given UTC Date instant.
+ *
+ * @param {Date} date - UTC Date instant
+ * @param {string} timeZone - IANA timezone identifier
+ * @returns {{ weekday: string, hhmm: string }}
+ */
+function getLocalPartsInTimezone(date, timeZone) {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    weekday: 'long',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  });
+  const parts = formatter.formatToParts(date);
+  let weekday = '';
+  let hour = '';
+  let minute = '';
+  for (const part of parts) {
+    if (part.type === 'weekday') weekday = part.value;
+    if (part.type === 'hour') hour = part.value;
+    if (part.type === 'minute') minute = part.value;
+  }
+  if (hour === '24') hour = '00';
+  return {
+    weekday,
+    hhmm: `${hour.padStart(2, '0')}:${minute.padStart(2, '0')}`,
+  };
+}
+
+/**
+ * Validates whether a proposed UTC date falls within a user's configured availability slots,
+ * evaluated strictly in the user's specific IANA timezone.
+ * If availabilitySlots is empty or unconfigured, returns true (no restrictions).
+ * If userTimezone is missing or invalid while slots are configured, returns false.
+ *
+ * @param {Date} date - UTC Date instant
+ * @param {Array<{ day: string, from: string, to: string }>} slots - User's local availability slots
+ * @param {string} userTimezone - Validated IANA timezone identifier (e.g. 'Asia/Kolkata')
+ * @returns {boolean}
+ */
+function isTimeWithinSlots(date, slots, userTimezone) {
   if (!Array.isArray(slots) || slots.length === 0) {
     return true;
   }
+  if (!(date instanceof Date) || isNaN(date.getTime())) {
+    return false;
+  }
+  if (!isValidIANATimezone(userTimezone)) {
+    return false;
+  }
 
-  const utcDay = DAYS_OF_WEEK[date.getUTCDay()];
-  const utcHHMM = `${String(date.getUTCHours()).padStart(2, '0')}:${String(date.getUTCMinutes()).padStart(2, '0')}`;
+  const { weekday, hhmm } = getLocalPartsInTimezone(date, userTimezone);
 
   return slots.some(slot => {
     if (!slot || !slot.day) return false;
-    if (slot.day.toLowerCase() !== utcDay.toLowerCase()) return false;
+    if (slot.day.toLowerCase() !== weekday.toLowerCase()) return false;
     const from = slot.from || '00:00';
     const to = slot.to || '23:59';
-    return utcHHMM >= from && utcHHMM <= to;
+    return hhmm >= from && hhmm <= to;
   });
 }
 
@@ -101,9 +155,9 @@ async function getCircularSchedule(req, res) {
     }
 
     const exchange = await CircularExchange.findById(req.params.id)
-      .populate('participants.user', 'name email averageRating availabilitySlots')
-      .populate('legs.teacher', 'name email averageRating availabilitySlots')
-      .populate('legs.learner', 'name email averageRating availabilitySlots')
+      .populate('participants.user', 'name email averageRating availabilitySlots timezone')
+      .populate('legs.teacher', 'name email averageRating availabilitySlots timezone')
+      .populate('legs.learner', 'name email averageRating availabilitySlots timezone')
       .populate('legs.swapRequest', 'status scheduledAt roomId compatibilityScore');
 
     if (!exchange) {
@@ -221,18 +275,33 @@ async function proposeLegSchedule(req, res) {
         throw err;
       }
 
-      // Fetch teacher and learner availability
-      const teacher = await User.findById(leg.teacher).session(session).select('name availabilitySlots');
-      const learner = await User.findById(leg.learner).session(session).select('name availabilitySlots');
+      // Fetch teacher and learner availability and timezone
+      const teacher = await User.findById(leg.teacher).session(session).select('name availabilitySlots timezone');
+      const learner = await User.findById(leg.learner).session(session).select('name availabilitySlots timezone');
 
-      // Validate availability slots (Authoritative UTC convention)
-      if (!isTimeWithinSlots(scheduledDate, teacher?.availabilitySlots)) {
+      // Validate availability slots in teacher's IANA timezone
+      if (Array.isArray(teacher?.availabilitySlots) && teacher.availabilitySlots.length > 0) {
+        if (!teacher?.timezone || !isValidIANATimezone(teacher.timezone)) {
+          const err = new Error('Teacher timezone is not configured. Please set your timezone in profile settings before scheduling.');
+          err.status = 400;
+          throw err;
+        }
+      }
+      if (!isTimeWithinSlots(scheduledDate, teacher?.availabilitySlots, teacher?.timezone)) {
         const err = new Error('Proposed time is outside your configured availability slots');
         err.status = 400;
         throw err;
       }
 
-      if (!isTimeWithinSlots(scheduledDate, learner?.availabilitySlots)) {
+      // Validate availability slots in learner's IANA timezone
+      if (Array.isArray(learner?.availabilitySlots) && learner.availabilitySlots.length > 0) {
+        if (!learner?.timezone || !isValidIANATimezone(learner.timezone)) {
+          const err = new Error(`${learner?.name || 'The learner'}'s timezone is not configured. Please set timezone before scheduling.`);
+          err.status = 400;
+          throw err;
+        }
+      }
+      if (!isTimeWithinSlots(scheduledDate, learner?.availabilitySlots, learner?.timezone)) {
         const err = new Error(`Proposed time is outside ${learner?.name || 'the learner'}'s configured availability slots`);
         err.status = 400;
         throw err;
@@ -464,17 +533,31 @@ async function confirmLegSchedule(req, res) {
       }
 
       // 3. Availability revalidation at confirmation:
-      // Re-fetch latest availabilitySlots for teacher and learner from database in this transaction.
-      const teacher = await User.findById(leg.teacher).session(session).select('name availabilitySlots');
-      const learner = await User.findById(leg.learner).session(session).select('name availabilitySlots');
+      // Re-fetch latest availabilitySlots and timezone for teacher and learner from database in this transaction.
+      const teacher = await User.findById(leg.teacher).session(session).select('name availabilitySlots timezone');
+      const learner = await User.findById(leg.learner).session(session).select('name availabilitySlots timezone');
 
-      if (!isTimeWithinSlots(confirmedTime, teacher?.availabilitySlots)) {
+      if (Array.isArray(teacher?.availabilitySlots) && teacher.availabilitySlots.length > 0) {
+        if (!teacher?.timezone || !isValidIANATimezone(teacher.timezone)) {
+          const err = new Error('Teacher timezone is not configured. Please set timezone before scheduling.');
+          err.status = 409;
+          throw err;
+        }
+      }
+      if (!isTimeWithinSlots(confirmedTime, teacher?.availabilitySlots, teacher?.timezone)) {
         const err = new Error(`Proposed time is no longer within ${teacher?.name || 'teacher'}'s available slots`);
         err.status = 409;
         throw err;
       }
 
-      if (!isTimeWithinSlots(confirmedTime, learner?.availabilitySlots)) {
+      if (Array.isArray(learner?.availabilitySlots) && learner.availabilitySlots.length > 0) {
+        if (!learner?.timezone || !isValidIANATimezone(learner.timezone)) {
+          const err = new Error('Your timezone is not configured. Please set timezone before scheduling.');
+          err.status = 409;
+          throw err;
+        }
+      }
+      if (!isTimeWithinSlots(confirmedTime, learner?.availabilitySlots, learner?.timezone)) {
         const err = new Error('Proposed time is no longer within your available slots');
         err.status = 409;
         throw err;
@@ -788,4 +871,6 @@ module.exports = {
   rejectLegSchedule,
   isTimeWithinSlots,
   checkDoubleBooking,
+  isValidIANATimezone,
+  getLocalPartsInTimezone,
 };

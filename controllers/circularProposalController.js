@@ -300,7 +300,7 @@ async function getCircularProposals(req, res) {
 
     const proposals = await CircularExchange.find(filter)
       .populate('initiator', 'name email averageRating')
-      .populate('participants.user', 'name email averageRating availabilitySlots')
+      .populate('participants.user', 'name email averageRating availabilitySlots timezone')
       .populate('legs.teacher', 'name email averageRating')
       .populate('legs.learner', 'name email averageRating')
       .sort({ createdAt: -1 });
@@ -324,7 +324,7 @@ async function getCircularProposalById(req, res) {
 
     let proposal = await CircularExchange.findById(req.params.id)
       .populate('initiator', 'name email averageRating')
-      .populate('participants.user', 'name email averageRating availabilitySlots')
+      .populate('participants.user', 'name email averageRating availabilitySlots timezone')
       .populate('legs.teacher', 'name email averageRating')
       .populate('legs.learner', 'name email averageRating');
 

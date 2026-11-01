@@ -203,7 +203,7 @@ export default function Swaps() {
                     <div className="swap-meta-row">
                       {s.scheduledAt && (
                         <span className="meta-pill meta-schedule">
-                          📅 {new Date(s.scheduledAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                          📅 {new Date(s.scheduledAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short', timeZoneName: 'short' })}
                         </span>
                       )}
                       {s.compatibilityScore > 0 && (

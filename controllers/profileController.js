@@ -20,7 +20,7 @@ exports.getPublicProfile = async (req, res) => {
     }
 
     const user = await User.findById(req.params.id)
-      .select('name bio skillsOffered skillsWanted availability availabilitySlots averageRating totalRatings createdAt');
+      .select('name bio skillsOffered skillsWanted availability availabilitySlots timezone averageRating totalRatings createdAt');
     if (!user) return res.status(404).json({ message: 'User not found' });
     res.status(200).json(user);
   } catch (err) {
@@ -31,7 +31,7 @@ exports.getPublicProfile = async (req, res) => {
 // PUT /api/profile
 exports.updateProfile = async (req, res) => {
   try {
-    const { name, bio, skillsOffered, skillsWanted, availability, availabilitySlots } = req.body;
+    const { name, bio, skillsOffered, skillsWanted, availability, availabilitySlots, timezone } = req.body;
 
     const user = await User.findById(req.userId);
     if (!user) return res.status(404).json({ message: 'User not found' });
@@ -55,6 +55,22 @@ exports.updateProfile = async (req, res) => {
     if (skillsWanted)       user.skillsWanted       = skillsWanted;
     if (availability !== undefined) user.availability = availability;
     if (availabilitySlots)  user.availabilitySlots  = availabilitySlots;
+
+    if (timezone !== undefined) {
+      if (timezone === null || timezone === '') {
+        user.timezone = null;
+      } else if (typeof timezone === 'string') {
+        const trimmedTz = timezone.trim();
+        try {
+          Intl.DateTimeFormat(undefined, { timeZone: trimmedTz });
+          user.timezone = trimmedTz;
+        } catch (_) {
+          return res.status(400).json({ message: `Invalid IANA timezone identifier: ${timezone}` });
+        }
+      } else {
+        return res.status(400).json({ message: 'Timezone must be a valid IANA string' });
+      }
+    }
 
     const updated = await user.save();
     const userObj = updated.toObject();

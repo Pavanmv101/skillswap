@@ -1,5 +1,5 @@
 /**
- * Phase 6 — Advanced Skill Exchange Algorithm (Step 3 - Substage 3.4.1.2)
+ * Phase 6 — Advanced Skill Exchange Algorithm (Step 3 - Substage 3.4.1.4)
  * test_phase6_step3_stage3_sub4.js
  *
  * Dedicated test suite for Circular Leg Scheduling & Rescheduling:
@@ -8,11 +8,11 @@
  * 3. Rescheduling: Old confirmed schedule preserved when new proposal is rejected.
  * 4. Revised proposal supersedes old proposal in scheduleHistory with proposalId.
  * 5. Invalid date validation (past dates, malformed date strings).
- * 6. Availability slot validation (authoritative UTC convention).
+ * 6. Availability slot validation (timezone-aware IANA evaluation).
  * 7. Double-booking conflict prevention across bilateral and circular swaps (±30m).
  * 8. Strict authorization: Only teacher can propose; only learner can confirm/reject.
- * 9. Stale/invalid proposal confirmation & rejection blocked (Finding 1).
- * 10. Concurrency: Version check prevents silent overwrite (Finding 1).
+ * 9. Stale/invalid proposal confirmation & rejection blocked.
+ * 10. Concurrency: Version check prevents silent overwrite.
  * 11. Transaction rollback: Outbox failure rolls back scheduling mutation.
  * 12. Reminder service isolation: Unconfirmed proposals do not trigger session reminders.
  * 13. Independent scheduling: All 3 legs schedule and reschedule completely independently.
@@ -21,7 +21,7 @@
  * 16. Audit Finding 1: proposalId required in confirm/reject; stale/missing returns 409 with zero mutation.
  * 17. Audit Finding 2: Repeated confirmation is idempotent (HTTP 200, zero duplicate history/outbox).
  * 18. Audit Finding 3: Availability revalidation at confirmation (HTTP 409 if slot withdrawn, 200 if retained).
- * 19. Audit Finding 4: Authoritative UTC timezone evaluation without dual-checking drift.
+ * 19. Audit Finding 4 / Substage 3.4.1.4: End-to-End IANA Timezone Validation & Cross-Timezone Collaboration.
  */
 
 'use strict';
@@ -52,12 +52,16 @@ const {
   rejectLegSchedule,
   isTimeWithinSlots,
   checkDoubleBooking,
+  isValidIANATimezone,
+  getLocalPartsInTimezone,
 } = require('./controllers/circularSchedulingController');
 
+const { updateProfile } = require('./controllers/profileController');
 const { scheduleSwap } = require('./controllers/swapController');
 const { checkUpcomingSessionReminders } = require('./services/reminderService');
 const { isTransactionSupported } = require('./services/reservationService');
 const circularRoutes = require('./routes/circularRoutes');
+const profileRoutes = require('./routes/profileRoutes');
 
 let passed = 0;
 let failed = 0;
@@ -96,6 +100,7 @@ async function createTestUser(data = {}) {
       { day: 'Wednesday', from: '09:00', to: '18:00' },
       { day: 'Friday', from: '09:00', to: '18:00' },
     ],
+    timezone: data.timezone !== undefined ? data.timezone : 'UTC',
     blockedUsers: data.blockedUsers || [],
     averageRating: data.averageRating ?? 0,
     totalRatings: data.totalRatings ?? 0,
@@ -185,19 +190,44 @@ function getFutureSlotDate(dayName = 'Monday', utcHour = 14) {
   return d;
 }
 
+/**
+ * Returns a future UTC Date representing an exact target weekday and HH:MM in a specific IANA timezone.
+ */
+function getFutureDateInTimezone(dayName, timeHHMM, timeZone = 'UTC') {
+  const candidate = new Date(Date.now() + 48 * 3600 * 1000);
+  candidate.setUTCMinutes(0, 0, 0);
+
+  const stepMs = 15 * 60 * 1000;
+  const maxSteps = (14 * 24 * 60) / 15;
+
+  let current = candidate.getTime();
+  for (let i = 0; i < maxSteps; i++) {
+    const d = new Date(current);
+    const parts = getLocalPartsInTimezone(d, timeZone);
+    if (parts.weekday.toLowerCase() === dayName.toLowerCase() && parts.hhmm === timeHHMM) {
+      if (d > new Date()) return d;
+    }
+    current += stepMs;
+  }
+  throw new Error(`Could not find future slot for ${dayName} ${timeHHMM} in ${timeZone}`);
+}
+
 let testServer = null;
 let testBaseUrl = '';
+let profileBaseUrl = '';
 
 async function startHttpServer() {
   const app = express();
   app.use(express.json());
   app.use('/api/circular', circularRoutes);
+  app.use('/api/profile', profileRoutes);
 
   await new Promise((resolve) => {
     testServer = http.createServer(app);
     testServer.listen(0, () => {
       const port = testServer.address().port;
       testBaseUrl = `http://localhost:${port}/api/circular`;
+      profileBaseUrl = `http://localhost:${port}/api/profile`;
       resolve();
     });
   });
@@ -1186,45 +1216,347 @@ async function runTests() {
   });
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // 15. AUDIT FINDING 4: TIMEZONE HANDLING & AUTHORITATIVE UTC EVALUATION
+  // 15. SUBSTAGE 3.4.1.4: IANA TIMEZONE SUPPORT & CROSS-TIMEZONE SCHEDULING
   // ─────────────────────────────────────────────────────────────────────────────
-  console.log('\n--- 15. Audit Finding 4: Timezone Handling & Authoritative UTC Evaluation ---');
+  console.log('\n--- 15. Substage 3.4.1.4: IANA Timezone Support & Cross-Timezone Scheduling ---');
 
-  await test('isTimeWithinSlots evaluates strictly in UTC representation', () => {
-    // Slot is on Monday from 10:00 to 18:00 UTC
-    const slots = [{ day: 'Monday', from: '10:00', to: '18:00' }];
-
-    // Monday 14:00 UTC -> should match
-    const mondayMatch = new Date(Date.UTC(2026, 10, 2, 14, 0, 0)); // Nov 2, 2026 is Monday
-    assert.strictEqual(isTimeWithinSlots(mondayMatch, slots), true);
-
-    // Monday 08:00 UTC -> before slot from
-    const mondayEarly = new Date(Date.UTC(2026, 10, 2, 8, 0, 0));
-    assert.strictEqual(isTimeWithinSlots(mondayEarly, slots), false);
-
-    // Monday 19:00 UTC -> after slot to
-    const mondayLate = new Date(Date.UTC(2026, 10, 2, 19, 0, 0));
-    assert.strictEqual(isTimeWithinSlots(mondayLate, slots), false);
-
-    // Sunday 14:00 UTC -> wrong UTC day
-    const sundaySameHour = new Date(Date.UTC(2026, 10, 1, 14, 0, 0)); // Nov 1, 2026 is Sunday
-    assert.strictEqual(isTimeWithinSlots(sundaySameHour, slots), false);
+  await test('isValidIANATimezone validates standard IANA strings and rejects invalid identifiers', () => {
+    assert.strictEqual(isValidIANATimezone('Asia/Kolkata'), true);
+    assert.strictEqual(isValidIANATimezone('America/Los_Angeles'), true);
+    assert.strictEqual(isValidIANATimezone('Europe/London'), true);
+    assert.strictEqual(isValidIANATimezone('UTC'), true);
+    assert.strictEqual(isValidIANATimezone('Not/A_Real_Timezone'), false);
+    assert.strictEqual(isValidIANATimezone('GMT+5:30'), false);
+    assert.strictEqual(isValidIANATimezone(''), false);
+    assert.strictEqual(isValidIANATimezone(null), false);
+    assert.strictEqual(isValidIANATimezone(undefined), false);
   });
 
-  await test('UTC day boundary test: Sunday night in Western zones is Monday in UTC', () => {
-    // Slot: Monday 01:00 to 05:00 UTC
-    const slots = [{ day: 'Monday', from: '01:00', to: '05:00' }];
+  await test('getLocalPartsInTimezone accurately extracts weekday and HH:MM in arbitrary timezones', () => {
+    // 2026-11-02 03:30:00 UTC
+    const d = new Date('2026-11-02T03:30:00.000Z');
+    const kolkata = getLocalPartsInTimezone(d, 'Asia/Kolkata');
+    assert.strictEqual(kolkata.weekday, 'Monday');
+    assert.strictEqual(kolkata.hhmm, '09:00');
 
-    // Date: Monday 02:30 UTC
-    const utcDate = new Date(Date.UTC(2026, 10, 2, 2, 30, 0));
-    assert.strictEqual(utcDate.getUTCDay(), 1); // Monday in UTC
+    const la = getLocalPartsInTimezone(d, 'America/Los_Angeles');
+    assert.strictEqual(la.weekday, 'Sunday');
+    assert.strictEqual(la.hhmm, '19:30');
 
-    // Evaluates true strictly against Monday slot
-    assert.strictEqual(isTimeWithinSlots(utcDate, slots), true);
+    const london = getLocalPartsInTimezone(d, 'Europe/London');
+    assert.strictEqual(london.weekday, 'Monday');
+    assert.strictEqual(london.hhmm, '03:30');
+  });
 
-    // Should NOT match a Sunday slot under authoritative UTC convention
-    const sundaySlots = [{ day: 'Sunday', from: '18:00', to: '23:59' }];
-    assert.strictEqual(isTimeWithinSlots(utcDate, sundaySlots), false);
+  await test('India (Asia/Kolkata): 09:00 IST proposal is accepted for Monday 09:00-18:00 IST slot', async () => {
+    const uA = await createTestUser({
+      timezone: 'Asia/Kolkata',
+      availabilitySlots: [{ day: 'Monday', from: '09:00', to: '18:00' }],
+    });
+    const uB = await createTestUser({
+      timezone: 'Asia/Kolkata',
+      availabilitySlots: [{ day: 'Monday', from: '09:00', to: '18:00' }],
+    });
+    const uC = await createTestUser({ timezone: 'Asia/Kolkata' });
+
+    const exchange = await createAndActivateCycle(uA, uB, uC, ['KolkataReact', 'KolkataNode', 'KolkataGo']);
+    const cycleId = exchange._id.toString();
+
+    // 09:00 IST on Monday (which is 03:30 UTC)
+    const monday9amIST = getFutureDateInTimezone('Monday', '09:00', 'Asia/Kolkata');
+
+    const resP = mockRes();
+    await proposeLegSchedule(
+      { userId: uA._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { scheduledTime: monday9amIST.toISOString() } },
+      resP
+    );
+
+    assert.strictEqual(resP.statusCode, 200);
+    assert.strictEqual(resP.body.scheduleProposal.status, 'pending_confirmation');
+
+    // Confirm succeeds with proposalId
+    const resC = mockRes();
+    await confirmLegSchedule(
+      { userId: uB._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { proposalId: resP.body.proposalId } },
+      resC
+    );
+    assert.strictEqual(resC.statusCode, 200);
+    assert.strictEqual(resC.body.status, 'scheduled');
+  });
+
+  await test('India (Asia/Kolkata): 19:00 IST proposal is rejected (400) outside Monday 09:00-18:00 IST slot', async () => {
+    const uA = await createTestUser({
+      timezone: 'Asia/Kolkata',
+      availabilitySlots: [{ day: 'Monday', from: '09:00', to: '18:00' }],
+    });
+    const uB = await createTestUser({
+      timezone: 'Asia/Kolkata',
+      availabilitySlots: [{ day: 'Monday', from: '09:00', to: '18:00' }],
+    });
+    const uC = await createTestUser({ timezone: 'Asia/Kolkata' });
+
+    const exchange = await createAndActivateCycle(uA, uB, uC, ['KolkataOut1', 'KolkataOut2', 'KolkataOut3']);
+    const cycleId = exchange._id.toString();
+
+    // 19:00 IST on Monday (outside 09:00-18:00 IST)
+    const monday7pmIST = getFutureDateInTimezone('Monday', '19:00', 'Asia/Kolkata');
+
+    const resP = mockRes();
+    await proposeLegSchedule(
+      { userId: uA._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { scheduledTime: monday7pmIST.toISOString() } },
+      resP
+    );
+
+    assert.strictEqual(resP.statusCode, 400);
+    assert(resP.body.message.includes('availability slots'));
+  });
+
+  await test('United States (America/Los_Angeles): Monday evening 20:00 PST (Tuesday UTC) accepted against Monday slot', async () => {
+    const uA = await createTestUser({
+      timezone: 'America/Los_Angeles',
+      availabilitySlots: [{ day: 'Monday', from: '18:00', to: '22:00' }],
+    });
+    const uB = await createTestUser({
+      timezone: 'America/Los_Angeles',
+      availabilitySlots: [{ day: 'Monday', from: '18:00', to: '22:00' }],
+    });
+    const uC = await createTestUser({ timezone: 'America/Los_Angeles' });
+
+    const exchange = await createAndActivateCycle(uA, uB, uC, ['LAPython', 'LADjango', 'LAFastAPI']);
+    const cycleId = exchange._id.toString();
+
+    // Monday 20:00 PST (corresponds to Tuesday 04:00 UTC)
+    const mondayEveLA = getFutureDateInTimezone('Monday', '20:00', 'America/Los_Angeles');
+
+    const resP = mockRes();
+    await proposeLegSchedule(
+      { userId: uA._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { scheduledTime: mondayEveLA.toISOString() } },
+      resP
+    );
+
+    assert.strictEqual(resP.statusCode, 200);
+    assert.strictEqual(resP.body.scheduleProposal.status, 'pending_confirmation');
+
+    // Confirm succeeds with proposalId
+    const resC = mockRes();
+    await confirmLegSchedule(
+      { userId: uB._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { proposalId: resP.body.proposalId } },
+      resC
+    );
+    assert.strictEqual(resC.statusCode, 200);
+    assert.strictEqual(resC.body.status, 'scheduled');
+  });
+
+  await test('Cross-Timezone: Teacher in Asia/Kolkata, Learner in America/Los_Angeles evaluated independently', async () => {
+    // Teacher in Kolkata available Monday 09:00 - 12:00 IST
+    const uTeacher = await createTestUser({
+      timezone: 'Asia/Kolkata',
+      availabilitySlots: [{ day: 'Monday', from: '09:00', to: '12:00' }],
+    });
+    // Learner in LA available Sunday 19:00 - 22:00 PST
+    const uLearner = await createTestUser({
+      timezone: 'America/Los_Angeles',
+      availabilitySlots: [{ day: 'Sunday', from: '19:00', to: '22:00' }],
+    });
+    const uObserver = await createTestUser({ timezone: 'UTC' });
+
+    const exchange = await createAndActivateCycle(uTeacher, uLearner, uObserver, ['Cross1', 'Cross2', 'Cross3']);
+    const cycleId = exchange._id.toString();
+
+    // Session instant: Monday 09:30 IST
+    // In LA, this exact instant is Sunday 20:00 PST!
+    const sharedInstant = getFutureDateInTimezone('Monday', '09:30', 'Asia/Kolkata');
+    const laParts = getLocalPartsInTimezone(sharedInstant, 'America/Los_Angeles');
+    assert.strictEqual(laParts.weekday, 'Sunday');
+    assert.strictEqual(laParts.hhmm, '20:00');
+
+    // Both should pass their respective timezone availability!
+    const resP = mockRes();
+    await proposeLegSchedule(
+      { userId: uTeacher._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { scheduledTime: sharedInstant.toISOString() } },
+      resP
+    );
+    assert.strictEqual(resP.statusCode, 200);
+
+    const resC = mockRes();
+    await confirmLegSchedule(
+      { userId: uLearner._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { proposalId: resP.body.proposalId } },
+      resC
+    );
+    assert.strictEqual(resC.statusCode, 200);
+  });
+
+  await test('Cross-Timezone: Proposal rejected when instant falls outside Learner local availability', async () => {
+    // Teacher in Kolkata available Monday 09:00 - 12:00 IST
+    const uTeacher = await createTestUser({
+      timezone: 'Asia/Kolkata',
+      availabilitySlots: [{ day: 'Monday', from: '09:00', to: '12:00' }],
+    });
+    // Learner in LA is available ONLY on Monday 09:00 - 12:00 PST (not Sunday evening)
+    const uLearner = await createTestUser({
+      timezone: 'America/Los_Angeles',
+      availabilitySlots: [{ day: 'Monday', from: '09:00', to: '12:00' }],
+    });
+    const uObserver = await createTestUser({ timezone: 'UTC' });
+
+    const exchange = await createAndActivateCycle(uTeacher, uLearner, uObserver, ['CrossFail1', 'CrossFail2', 'CrossFail3']);
+    const cycleId = exchange._id.toString();
+
+    // Monday 09:30 IST is Sunday 20:00 in LA (learner is not free on Sunday!)
+    const sharedInstant = getFutureDateInTimezone('Monday', '09:30', 'Asia/Kolkata');
+
+    const resP = mockRes();
+    await proposeLegSchedule(
+      { userId: uTeacher._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { scheduledTime: sharedInstant.toISOString() } },
+      resP
+    );
+
+    assert.strictEqual(resP.statusCode, 400);
+    assert(resP.body.message.includes('availability slots'));
+    assert(resP.body.message.includes(uLearner.name));
+  });
+
+  await test('Daylight Saving Time: Same UTC instant evaluates to different local hours before and after DST switch', () => {
+    // 20:00 UTC before DST (Winter PST, UTC-8): 12:00 PST
+    const winterInstant = new Date('2026-03-07T20:00:00.000Z');
+    const winterParts = getLocalPartsInTimezone(winterInstant, 'America/Los_Angeles');
+    assert.strictEqual(winterParts.hhmm, '12:00');
+
+    // 20:00 UTC after DST (Summer PDT, UTC-7): 13:00 PDT
+    const summerInstant = new Date('2026-03-10T20:00:00.000Z');
+    const summerParts = getLocalPartsInTimezone(summerInstant, 'America/Los_Angeles');
+    assert.strictEqual(summerParts.hhmm, '13:00');
+
+    const slots = [{ day: 'Saturday', from: '11:00', to: '12:30' }];
+    // Winter 20:00 UTC is 12:00 Saturday -> within 11:00-12:30
+    assert.strictEqual(isTimeWithinSlots(winterInstant, slots, 'America/Los_Angeles'), true);
+  });
+
+  await test('Migration: User with availabilitySlots but missing/null timezone blocked from scheduling until timezone configured', async () => {
+    // Existing user without timezone
+    const uA = await createTestUser({
+      timezone: null,
+      availabilitySlots: [{ day: 'Monday', from: '09:00', to: '18:00' }],
+    });
+    const uB = await createTestUser({ timezone: 'Asia/Kolkata' });
+    const uC = await createTestUser({ timezone: 'Asia/Kolkata' });
+
+    const exchange = await createAndActivateCycle(uA, uB, uC, ['Mig1', 'Mig2', 'Mig3']);
+    const cycleId = exchange._id.toString();
+
+    const futureTime = getFutureSlotDate('Monday', 14);
+
+    // Alice attempts to propose without timezone
+    const resP = mockRes();
+    await proposeLegSchedule(
+      { userId: uA._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { scheduledTime: futureTime.toISOString() } },
+      resP
+    );
+
+    assert.strictEqual(resP.statusCode, 400);
+    assert(resP.body.message.includes('timezone'));
+  });
+
+  await test('Migration: Timezone update via PUT /api/profile synchronizes timezone without overwriting availabilitySlots', async () => {
+    const user = await createTestUser({
+      timezone: null,
+      availabilitySlots: [{ day: 'Wednesday', from: '14:00', to: '18:00' }],
+    });
+
+    const resUpdate = mockRes();
+    await updateProfile(
+      {
+        userId: user._id.toString(),
+        body: { timezone: 'Asia/Kolkata' },
+      },
+      resUpdate
+    );
+
+    assert.strictEqual(resUpdate.statusCode, 200);
+    assert.strictEqual(resUpdate.body.timezone, 'Asia/Kolkata');
+
+    // Verify availabilitySlots was NOT overwritten!
+    const refreshed = await User.findById(user._id);
+    assert.strictEqual(refreshed.timezone, 'Asia/Kolkata');
+    assert.strictEqual(refreshed.availabilitySlots.length, 1);
+    assert.strictEqual(refreshed.availabilitySlots[0].day, 'Wednesday');
+    assert.strictEqual(refreshed.availabilitySlots[0].from, '14:00');
+    assert.strictEqual(refreshed.availabilitySlots[0].to, '18:00');
+  });
+
+  await test('Migration: Invalid timezone in profile update is rejected with 400 Bad Request', async () => {
+    const user = await createTestUser({ timezone: 'UTC' });
+
+    const resInvalid = mockRes();
+    await updateProfile(
+      {
+        userId: user._id.toString(),
+        body: { timezone: 'Not_A_Real_Timezone/Moon' },
+      },
+      resInvalid
+    );
+
+    assert.strictEqual(resInvalid.statusCode, 400);
+    assert(resInvalid.body.message.includes('Invalid IANA timezone'));
+  });
+
+  await test('End-to-End HTTP: Teacher and Learner in Asia/Kolkata propose and confirm session in IST via HTTP endpoints', async () => {
+    const uA = await createTestUser({
+      timezone: 'Asia/Kolkata',
+      availabilitySlots: [{ day: 'Monday', from: '09:00', to: '18:00' }],
+    });
+    const uB = await createTestUser({
+      timezone: 'Asia/Kolkata',
+      availabilitySlots: [{ day: 'Monday', from: '09:00', to: '18:00' }],
+    });
+    const uC = await createTestUser({ timezone: 'Asia/Kolkata' });
+
+    const exchange = await createAndActivateCycle(uA, uB, uC, ['E2EKolkata1', 'E2EKolkata2', 'E2EKolkata3']);
+    const cycleId = exchange._id.toString();
+
+    const tokenA = generateToken(uA._id);
+    const tokenB = generateToken(uB._id);
+
+    // Monday 11:00 AM IST
+    const sessionTimeIST = getFutureDateInTimezone('Monday', '11:00', 'Asia/Kolkata');
+
+    // 1. Propose schedule via HTTP POST
+    const proposeRes = await fetch(`${testBaseUrl}/${cycleId}/legs/0/schedule/propose`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${tokenA}`,
+      },
+      body: JSON.stringify({ scheduledTime: sessionTimeIST.toISOString() }),
+    });
+    assert.strictEqual(proposeRes.status, 200);
+    const proposeData = await proposeRes.json();
+    assert.strictEqual(proposeData.scheduleProposal.status, 'pending_confirmation');
+    const proposalId = proposeData.proposalId;
+    assert.ok(proposalId);
+
+    // 2. Confirm schedule via HTTP PUT passing proposalId
+    const confirmRes = await fetch(`${testBaseUrl}/${cycleId}/legs/0/schedule/confirm`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${tokenB}`,
+      },
+      body: JSON.stringify({ proposalId }),
+    });
+    assert.strictEqual(confirmRes.status, 200);
+    const confirmData = await confirmRes.json();
+    assert.strictEqual(confirmData.status, 'scheduled');
+    assert.strictEqual(new Date(confirmData.scheduledAt).getTime(), sessionTimeIST.getTime());
+
+    // 3. Verify schedule overview returns populated timezones
+    const scheduleRes = await fetch(`${testBaseUrl}/${cycleId}/schedule`, {
+      headers: { Authorization: `Bearer ${tokenA}` },
+    });
+    assert.strictEqual(scheduleRes.status, 200);
+    const scheduleData = await scheduleRes.json();
+    assert.strictEqual(scheduleData.legs[0].teacher.timezone, 'Asia/Kolkata');
+    assert.strictEqual(scheduleData.legs[0].learner.timezone, 'Asia/Kolkata');
   });
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -1243,7 +1575,7 @@ async function runTests() {
   console.log('  🧹 Teardown complete.');
 
   console.log('\n================================================================');
-  console.log(`Substage 3.4.1.2 Test Results: ${passed} passed, ${failed} failed`);
+  console.log(`Substage 3.4.1.4 Test Results: ${passed} passed, ${failed} failed`);
   console.log('================================================================\n');
 
   if (failed > 0) {
@@ -1255,7 +1587,7 @@ async function runTests() {
     });
     process.exit(1);
   } else {
-    console.log('All Substage 3.4.1.2 tests completed successfully!');
+    console.log('All Substage 3.4.1.4 tests completed successfully!');
   }
 }
 

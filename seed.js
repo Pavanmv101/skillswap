@@ -32,6 +32,7 @@ const demoUsers = [
       { day: 'Wednesday', from: '18:00', to: '21:00' },
       { day: 'Saturday', from: '10:00', to: '14:00' }
     ],
+    timezone: 'Asia/Kolkata',
     credits: 10
   },
   {
@@ -53,6 +54,7 @@ const demoUsers = [
       { day: 'Thursday', from: '17:00', to: '19:00' },
       { day: 'Saturday', from: '11:00', to: '15:00' }
     ],
+    timezone: 'Asia/Kolkata',
     credits: 15
   },
   {
@@ -73,6 +75,7 @@ const demoUsers = [
       { day: 'Friday', from: '18:00', to: '21:00' },
       { day: 'Sunday', from: '10:00', to: '13:00' }
     ],
+    timezone: 'Asia/Kolkata',
     credits: 8
   },
   {
@@ -92,6 +95,7 @@ const demoUsers = [
       { day: 'Saturday', from: '14:00', to: '18:00' },
       { day: 'Sunday', from: '15:00', to: '19:00' }
     ],
+    timezone: 'Asia/Kolkata',
     credits: 12
   },
   {
