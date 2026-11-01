@@ -10,18 +10,23 @@
  *   Reliability Score = (C + K * P0) / (C + F + K)
  *
  * Where:
- *   C  = Completed exchanges (successful outcomes)
- *   F  = Abandoned or failed accepted exchanges
+ *   C  = Completed exchanges (successful mutual outcomes)
+ *   F  = Explicitly failed or attributed abandoned exchanges
  *   K  = Prior weight (default 3.0 pseudo-exchanges)
- *   P0 = Neutral prior mean (default 0.70)
+ *   P0 = Neutral prior mean (default 0.70, provisional design heuristic)
  *
- * Assumptions & Cancellation Semantics:
- *   1. Pending requests, rejected proposals, and pre-acceptance cancellations
+ * Attribution Rules & Lifecycle Semantics:
+ *   1. Completed exchanges (status: 'completed') represent mutual success (C += 1).
+ *   2. Pending requests, rejected proposals, and pre-acceptance cancellations
  *      are NOT exchanges and are strictly excluded from completion scoring.
- *   2. Active accepted exchanges currently within normal completion windows
- *      are treated as ongoing and are not counted as failures.
- *   3. Accepted exchanges that have stalled or been abandoned past the
- *      stale threshold are categorized as failed outcomes.
+ *   3. Active accepted exchanges currently within normal completion windows
+ *      are treated as ongoing in-flight sessions (activeCount).
+ *   4. Stale accepted exchanges where scheduled time has passed or activity has
+ *      stalled are classified as unattributed/neutral (unattributedCount). Because
+ *      the existing schema lacks fault attribution (e.g. who abandoned the call),
+ *      stale swaps are NOT penalized against either user's score (F is unchanged).
+ *   5. Malformed/invalid schedule dates are classified as unattributed/neutral
+ *      rather than silently remaining active or blaming either participant.
  */
 
 'use strict';
@@ -29,17 +34,32 @@
 const mongoose    = require('mongoose');
 const SwapRequest = require('../models/SwapRequest');
 
-// Default Bayesian Prior Constants
-const DEFAULT_PRIOR_MEAN   = 0.70; // 70% baseline expected completion rate
-const DEFAULT_PRIOR_WEIGHT = 3.0;  // equivalent to 3 neutral exchange observations
-const DEFAULT_STALE_DAYS   = 14;   // days after scheduled date before an accepted swap is considered stale
+/**
+ * Default Bayesian Prior Constants:
+ *
+ * DEFAULT_PRIOR_MEAN = 0.70:
+ *   PROVISIONAL DESIGN HEURISTIC: This 0.70 baseline was selected to align with
+ *   the platform's neutral rating expectation (3.5 / 5.0 = 0.70). It is NOT an
+ *   empirically measured platform completion rate. Once long-term production
+ *   telemetry is collected, this prior can be calibrated against observed base rates.
+ *
+ * DEFAULT_PRIOR_WEIGHT = 3.0:
+ *   Confidence weight equivalent to 3 neutral exchange observations.
+ *
+ * DEFAULT_STALE_DAYS = 14:
+ *   Grace period (days) past a scheduled session before an uncompleted accepted
+ *   swap is classified as stale.
+ */
+const DEFAULT_PRIOR_MEAN   = 0.70;
+const DEFAULT_PRIOR_WEIGHT = 3.0;
+const DEFAULT_STALE_DAYS   = 14;
 
 /**
  * Pure mathematical calculation of Bayesian exchange reliability.
  * Safe against division by zero, NaN, and negative inputs.
  *
  * @param {number} completed - Count of successfully completed exchanges (C >= 0)
- * @param {number} failed    - Count of failed / abandoned accepted exchanges (F >= 0)
+ * @param {number} failed    - Count of explicitly failed / attributed exchanges (F >= 0)
  * @param {Object} [options]
  * @param {number} [options.priorMean=0.70]   - Neutral prior (0..1)
  * @param {number} [options.priorWeight=3.0]  - Prior confidence weight (K > 0)
@@ -70,59 +90,74 @@ function calculateBayesianReliability(completed = 0, failed = 0, options = {}) {
 }
 
 /**
- * Classifies an accepted swap as either currently active or stalled/abandoned.
+ * Classifies an accepted swap as either currently active or stale/unattributed.
+ * Handles valid future dates, valid past dates, missing dates, and malformed dates.
  *
  * @param {Object} swap - SwapRequest document
- * @param {number} staleDays - Days threshold
- * @param {Date} [now=new Date()]
- * @returns {'active'|'stalled'}
+ * @param {number} [staleDays=DEFAULT_STALE_DAYS] - Days threshold
+ * @param {Date}   [now=new Date()]
+ * @returns {'active'|'unattributed'}
  */
 function classifyAcceptedSwap(swap, staleDays = DEFAULT_STALE_DAYS, now = new Date()) {
   const nowMs = now.getTime();
   const thresholdMs = staleDays * 24 * 60 * 60 * 1000;
 
-  // If a scheduled date exists and is in the future, it is definitely active
-  if (swap.scheduledAt) {
-    const scheduledMs = new Date(swap.scheduledAt).getTime();
+  // Check if scheduledAt is provided
+  if (swap && swap.scheduledAt !== null && swap.scheduledAt !== undefined && swap.scheduledAt !== '') {
+    const scheduledDate = new Date(swap.scheduledAt);
+    const scheduledMs = scheduledDate.getTime();
+
+    // Invalid scheduledAt date string -> classify as unattributed/neutral
+    if (isNaN(scheduledMs)) {
+      return 'unattributed';
+    }
+
+    // Scheduled in the future -> active in-flight session
     if (scheduledMs > nowMs) {
       return 'active';
     }
-    // If scheduled date was in the past beyond staleDays, it stalled
+
+    // Scheduled in past beyond stale threshold -> stale unattributed
     if (nowMs - scheduledMs > thresholdMs) {
-      return 'stalled';
+      return 'unattributed';
     }
-    // Recently passed scheduled session (within threshold) still treated as in-flight
+
+    // Recently passed scheduled session (within staleDays) -> still considered in-flight
     return 'active';
   }
 
   // If no scheduled date was set, examine updatedAt / createdAt
-  const updatedMs = new Date(swap.updatedAt || swap.createdAt).getTime();
-  const maxUnscheduledDays = staleDays * 2; // e.g. 28 days for unscheduled accepted swaps
+  const updatedDate = new Date(swap?.updatedAt || swap?.createdAt);
+  const updatedMs = updatedDate.getTime();
+
+  // If timestamps are malformed -> classify as unattributed
+  if (isNaN(updatedMs)) {
+    return 'unattributed';
+  }
+
+  const maxUnscheduledDays = staleDays * 2; // e.g. 28 days grace period for unscheduled accepted swaps
   if (nowMs - updatedMs > (maxUnscheduledDays * 24 * 60 * 60 * 1000)) {
-    return 'stalled';
+    return 'unattributed';
   }
 
   return 'active';
 }
 
 /**
- * Aggregates all swap requests for a user and calculates their complete
- * exchange reliability profile with participant attribution.
+ * Pure helper to aggregate swap documents for a single participant into
+ * metrics and compute their Bayesian reliability score without extra database calls.
  *
- * @param {string|mongoose.Types.ObjectId} userId
+ * @param {Array<Object>} swaps - Array of SwapRequest objects for this participant
  * @param {Object} [options]
- * @param {number} [options.priorMean=0.70]
- * @param {number} [options.priorWeight=3.0]
- * @param {number} [options.staleDays=14]
- * @param {Date}   [options.now=new Date()]
- * @returns {Promise<Object>} Reliability breakdown and metrics
+ * @returns {Object} Reliability breakdown
  */
-async function getUserExchangeReliability(userId, options = {}) {
+function processUserSwaps(swaps = [], options = {}) {
   const fallback = {
     score: options.priorMean ?? DEFAULT_PRIOR_MEAN,
     completedCount: 0,
     failedCount: 0,
     activeCount: 0,
+    unattributedCount: 0,
     neutralPrior: true,
     metrics: {
       totalExchanges: 0,
@@ -130,32 +165,24 @@ async function getUserExchangeReliability(userId, options = {}) {
       pendingCount: 0,
       rejectedCount: 0,
       cancelledCount: 0,
+      unattributedCount: 0,
     },
   };
 
-  if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
+  if (!Array.isArray(swaps) || swaps.length === 0) {
     return fallback;
   }
 
-  const userObjId = new mongoose.Types.ObjectId(userId);
   const now = options.now instanceof Date ? options.now : new Date();
   const staleDays = options.staleDays ?? DEFAULT_STALE_DAYS;
 
-  // Fetch all swaps where user is either fromUser or toUser
-  const swaps = await SwapRequest.find({
-    $or: [{ fromUser: userObjId }, { toUser: userObjId }],
-  }).select('fromUser toUser status scheduledAt createdAt updatedAt');
-
-  if (!swaps || swaps.length === 0) {
-    return fallback;
-  }
-
-  let completedCount = 0;
-  let failedCount    = 0;
-  let activeCount    = 0;
-  let pendingCount   = 0;
-  let rejectedCount  = 0;
-  let cancelledCount = 0;
+  let completedCount    = 0;
+  let failedCount       = 0;
+  let activeCount       = 0;
+  let unattributedCount = 0;
+  let pendingCount      = 0;
+  let rejectedCount     = 0;
+  let cancelledCount    = 0;
 
   for (const swap of swaps) {
     const status = swap.status;
@@ -165,13 +192,15 @@ async function getUserExchangeReliability(userId, options = {}) {
       completedCount++;
     } else if (status === 'accepted') {
       const state = classifyAcceptedSwap(swap, staleDays, now);
-      if (state === 'stalled') {
-        failedCount++;
+      if (state === 'unattributed') {
+        // Fair attribution: without explicit fault logging, stale swaps are neutral
+        unattributedCount++;
       } else {
+        // In-flight active session
         activeCount++;
       }
     } else if (status === 'pending') {
-      // Proposal under review — neither completed nor failed
+      // Proposal awaiting review — neither completed nor failed
       pendingCount++;
     } else if (status === 'rejected') {
       // Proposal declined before acceptance — never an exchange
@@ -182,6 +211,7 @@ async function getUserExchangeReliability(userId, options = {}) {
     }
   }
 
+  // Concluded exchanges with explicit completion or failure attribution
   const concludedCount = completedCount + failedCount;
   const neutralPrior   = concludedCount === 0;
 
@@ -196,19 +226,63 @@ async function getUserExchangeReliability(userId, options = {}) {
     completedCount,
     failedCount,
     activeCount,
+    unattributedCount,
     neutralPrior,
     metrics: {
-      totalExchanges: concludedCount + activeCount,
+      totalExchanges: completedCount + failedCount + activeCount + unattributedCount,
       rawCompletionRate,
       pendingCount,
       rejectedCount,
       cancelledCount,
+      unattributedCount,
     },
   };
 }
 
 /**
- * Batch-calculates exchange reliability for multiple candidate user IDs in parallel.
+ * Aggregates all swap requests for a single user and calculates their complete
+ * exchange reliability profile.
+ *
+ * @param {string|mongoose.Types.ObjectId} userId
+ * @param {Object} [options]
+ * @returns {Promise<Object>} Reliability breakdown and metrics
+ */
+async function getUserExchangeReliability(userId, options = {}) {
+  const fallback = {
+    score: options.priorMean ?? DEFAULT_PRIOR_MEAN,
+    completedCount: 0,
+    failedCount: 0,
+    activeCount: 0,
+    unattributedCount: 0,
+    neutralPrior: true,
+    metrics: {
+      totalExchanges: 0,
+      rawCompletionRate: null,
+      pendingCount: 0,
+      rejectedCount: 0,
+      cancelledCount: 0,
+      unattributedCount: 0,
+    },
+  };
+
+  if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
+    return fallback;
+  }
+
+  const userObjId = new mongoose.Types.ObjectId(userId);
+
+  // Single query for this user's swaps
+  const swaps = await SwapRequest.find({
+    $or: [{ fromUser: userObjId }, { toUser: userObjId }],
+  }).select('fromUser toUser status scheduledAt createdAt updatedAt');
+
+  return processUserSwaps(swaps, options);
+}
+
+/**
+ * Batch-calculates exchange reliability for multiple candidate user IDs.
+ * ELIMINATES N+1: Executes EXACTLY ONE database query using $or with $in,
+ * then groups documents in memory by user ID.
  *
  * @param {Array<string|mongoose.Types.ObjectId>} userIds
  * @param {Object} [options]
@@ -220,18 +294,58 @@ async function getBatchExchangeReliability(userIds = [], options = {}) {
     return resultsMap;
   }
 
-  const validIds = userIds
-    .filter(id => id && mongoose.Types.ObjectId.isValid(id))
-    .map(id => id.toString());
+  // Deduplicate and validate ObjectIds
+  const validObjIds = [];
+  const uniqueIdStrings = [];
+  const seen = new Set();
 
-  const uniqueIds = [...new Set(validIds)];
+  for (const rawId of userIds) {
+    if (rawId && mongoose.Types.ObjectId.isValid(rawId)) {
+      const idStr = rawId.toString();
+      if (!seen.has(idStr)) {
+        seen.add(idStr);
+        uniqueIdStrings.push(idStr);
+        validObjIds.push(new mongoose.Types.ObjectId(idStr));
+      }
+    }
+  }
 
-  await Promise.all(
-    uniqueIds.map(async (uid) => {
-      const result = await getUserExchangeReliability(uid, options);
-      resultsMap.set(uid, result);
-    })
-  );
+  if (uniqueIdStrings.length === 0) {
+    return resultsMap;
+  }
+
+  // EXACTLY ONE batched query to fetch all relevant swaps for candidate set
+  const allSwaps = await SwapRequest.find({
+    $or: [
+      { fromUser: { $in: validObjIds } },
+      { toUser:   { $in: validObjIds } },
+    ],
+  }).select('fromUser toUser status scheduledAt createdAt updatedAt');
+
+  // Group swaps in memory by participant ID
+  const userSwapsMap = new Map();
+  for (const idStr of uniqueIdStrings) {
+    userSwapsMap.set(idStr, []);
+  }
+
+  for (const swap of allSwaps) {
+    const fromStr = swap.fromUser ? swap.fromUser.toString() : null;
+    const toStr   = swap.toUser   ? swap.toUser.toString()   : null;
+
+    if (fromStr && userSwapsMap.has(fromStr)) {
+      userSwapsMap.get(fromStr).push(swap);
+    }
+    if (toStr && toStr !== fromStr && userSwapsMap.has(toStr)) {
+      userSwapsMap.get(toStr).push(swap);
+    }
+  }
+
+  // Calculate each participant's reliability independently from memory
+  for (const idStr of uniqueIdStrings) {
+    const userSwaps = userSwapsMap.get(idStr) || [];
+    const reliability = processUserSwaps(userSwaps, options);
+    resultsMap.set(idStr, reliability);
+  }
 
   return resultsMap;
 }
@@ -242,6 +356,7 @@ module.exports = {
   DEFAULT_STALE_DAYS,
   calculateBayesianReliability,
   classifyAcceptedSwap,
+  processUserSwaps,
   getUserExchangeReliability,
   getBatchExchangeReliability,
 };

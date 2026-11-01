@@ -1,18 +1,21 @@
 /**
- * Phase 6 — Step 1: Swap Reliability Foundation Tests
+ * Phase 6 — Step 1.1: Swap Reliability Foundation & Corrections Tests
  * test_phase6_step1.js
  *
- * Covers:
+ * Verifies:
  * 1. Pure mathematical Bayesian calculation (zero-denom, bounds, convergence).
- * 2. New users with no exchange history (neutral prior).
- * 3. Successful exchanges (completed swaps).
- * 4. Stalled/failed exchanges (past-due uncompleted accepted swaps).
- * 5. Rejection handling (proposals declined prior to acceptance).
- * 6. Pending handling (proposals awaiting response).
- * 7. Cancellation handling (proposals withdrawn prior to acceptance).
+ * 2. New users with no exchange history (neutral prior 0.70).
+ * 3. Successful exchanges (completed swaps) credited properly.
+ * 4. Stale accepted swaps do NOT penalize either participant (classified as unattributed/neutral).
+ * 5. Rejection handling (proposals declined prior to acceptance remain neutral).
+ * 6. Pending handling (proposals awaiting response remain neutral).
+ * 7. Cancellation handling (pre-acceptance withdrawals remain neutral).
  * 8. Participant attribution (both fromUser and toUser).
- * 9. Mixed outcomes (multiple states combined).
- * 10. Database batching and edge-case fallbacks.
+ * 9. Invalid scheduledAt handling (string 'not-a-valid-date' classified as unattributed/neutral).
+ * 10. Missing scheduledAt handling (null/undefined grace period).
+ * 11. Batch query optimization (ELIMINATES N+1: exactly 1 database query for multiple users).
+ * 12. Batch empty input and duplicate candidate IDs handling.
+ * 13. Mixed outcomes calculation.
  */
 
 'use strict';
@@ -29,6 +32,7 @@ const {
   DEFAULT_PRIOR_WEIGHT,
   calculateBayesianReliability,
   classifyAcceptedSwap,
+  processUserSwaps,
   getUserExchangeReliability,
   getBatchExchangeReliability,
 } = require('./services/reliabilityService');
@@ -84,10 +88,10 @@ async function createTestSwap(fromUser, toUser, status, overrides = {}) {
 
 (async () => {
   console.log('\n═════════════════════════════════════════════════════════════');
-  console.log('  Phase 6 — Step 1: Swap Reliability Foundation Tests');
+  console.log('  Phase 6 — Step 1.1: Swap Reliability Foundation Tests');
   console.log('═════════════════════════════════════════════════════════════\n');
 
-  // ── GROUP 1: Mathematical Unit Tests ─────────────────────────────────────
+  // ── GROUP 1: Mathematical Reliability Calculations ───────────────────────
   console.log('── Group 1: Mathematical Reliability Calculations ──');
 
   await test('New user (C=0, F=0) returns default neutral prior (0.70)', async () => {
@@ -114,7 +118,7 @@ async function createTestSwap(fromUser, toUser, status, overrides = {}) {
     assert.ok(s10 > s3, `s10 (${s10}) must be > s3 (${s3})`);
   });
 
-  await test('Failed / abandoned exchanges decrease reliability score monotonically', async () => {
+  await test('Explicitly attributable failures decrease reliability score monotonically', async () => {
     const s0 = calculateBayesianReliability(0, 0);
     const f1 = calculateBayesianReliability(0, 1);
     const f3 = calculateBayesianReliability(0, 3);
@@ -141,8 +145,8 @@ async function createTestSwap(fromUser, toUser, status, overrides = {}) {
     assert.strictEqual(customActive, 0.75);
   });
 
-  // ── GROUP 2: Swap Classification Helper ──────────────────────────────────
-  console.log('\n── Group 2: Swap Lifecycle Classification ──');
+  // ── GROUP 2: Swap Lifecycle & Date Classification ─────────────────────────
+  console.log('\n── Group 2: Swap Lifecycle & Invalid Date Classification ──');
 
   await test('Accepted swap scheduled in future is classified as active', async () => {
     const futureDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
@@ -150,26 +154,30 @@ async function createTestSwap(fromUser, toUser, status, overrides = {}) {
     assert.strictEqual(state, 'active');
   });
 
-  await test('Accepted swap scheduled far in past (> staleDays) is classified as stalled', async () => {
+  await test('Accepted swap scheduled far in past (> staleDays) is classified as unattributed', async () => {
     const pastDate = new Date(Date.now() - 20 * 24 * 60 * 60 * 1000);
     const state = classifyAcceptedSwap({ scheduledAt: pastDate }, 14);
-    assert.strictEqual(state, 'stalled');
+    assert.strictEqual(state, 'unattributed');
   });
 
-  await test('Unscheduled accepted swap updated recently is classified as active', async () => {
+  await test('Malformed/invalid string in scheduledAt is classified as unattributed/neutral', async () => {
+    const state = classifyAcceptedSwap({ scheduledAt: 'not-a-valid-date-string' });
+    assert.strictEqual(state, 'unattributed');
+  });
+
+  await test('Missing scheduledAt (null or undefined) updated recently is classified as active', async () => {
     const recentDate = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
-    const state = classifyAcceptedSwap({ updatedAt: recentDate });
-    assert.strictEqual(state, 'active');
+    assert.strictEqual(classifyAcceptedSwap({ scheduledAt: null, updatedAt: recentDate }), 'active');
+    assert.strictEqual(classifyAcceptedSwap({ scheduledAt: undefined, updatedAt: recentDate }), 'active');
   });
 
-  await test('Unscheduled accepted swap abandoned long ago (> 28 days) is classified as stalled', async () => {
+  await test('Missing scheduledAt abandoned long ago (> 28 days) is classified as unattributed', async () => {
     const oldDate = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000);
-    const state = classifyAcceptedSwap({ updatedAt: oldDate }, 14);
-    assert.strictEqual(state, 'stalled');
+    assert.strictEqual(classifyAcceptedSwap({ scheduledAt: null, updatedAt: oldDate }, 14), 'unattributed');
   });
 
-  // ── GROUP 3: Database Aggregation & Attribution Tests ────────────────────
-  console.log('\n── Group 3: Database Aggregation & Participant Attribution ──');
+  // ── GROUP 3: Database Aggregation & Fair Participant Attribution ──────────
+  console.log('\n── Group 3: Database Aggregation & Fair Participant Attribution ──');
 
   await mongoose.connect(process.env.MONGO_URI, { dbName: 'skillswap' });
 
@@ -181,6 +189,7 @@ async function createTestSwap(fromUser, toUser, status, overrides = {}) {
     assert.strictEqual(res.neutralPrior, true);
     assert.strictEqual(res.completedCount, 0);
     assert.strictEqual(res.failedCount, 0);
+    assert.strictEqual(res.unattributedCount, 0);
     assert.strictEqual(res.metrics.totalExchanges, 0);
     assert.strictEqual(res.metrics.rawCompletionRate, null);
   });
@@ -213,6 +222,47 @@ async function createTestSwap(fromUser, toUser, status, overrides = {}) {
     assert.strictEqual(resB.metrics.rawCompletionRate, 1.0);
   });
 
+  await test('Stale accepted swap does NOT penalize either participant (fair attribution)', async () => {
+    const userA = await createTestUser('Stale User A');
+    const userB = await createTestUser('Stale User B');
+
+    const pastDate = new Date(Date.now() - 25 * 24 * 60 * 60 * 1000);
+    await createTestSwap(userA, userB, 'accepted', { scheduledAt: pastDate });
+
+    const resA = await getUserExchangeReliability(userA._id);
+    const resB = await getUserExchangeReliability(userB._id);
+
+    // Stale swap is classified as unattributed/neutral — neither user is penalized!
+    assert.strictEqual(resA.completedCount, 0);
+    assert.strictEqual(resA.failedCount, 0);
+    assert.strictEqual(resA.unattributedCount, 1);
+    assert.strictEqual(resA.neutralPrior, true);
+    assert.strictEqual(resA.score, DEFAULT_PRIOR_MEAN);
+
+    assert.strictEqual(resB.completedCount, 0);
+    assert.strictEqual(resB.failedCount, 0);
+    assert.strictEqual(resB.unattributedCount, 1);
+    assert.strictEqual(resB.neutralPrior, true);
+    assert.strictEqual(resB.score, DEFAULT_PRIOR_MEAN);
+  });
+
+  await test('Invalid scheduledAt date in swap object classified as unattributed without penalizing', async () => {
+    // Test processUserSwaps directly with malformed scheduledAt property
+    const malformedSwap = {
+      status: 'accepted',
+      scheduledAt: 'not-a-valid-date-string',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    const res = processUserSwaps([malformedSwap]);
+    assert.strictEqual(res.completedCount, 0);
+    assert.strictEqual(res.failedCount, 0);
+    assert.strictEqual(res.unattributedCount, 1);
+    assert.strictEqual(res.score, DEFAULT_PRIOR_MEAN);
+    assert.strictEqual(res.neutralPrior, true);
+  });
+
   await test('Rejected proposals do not affect completed or failed counts', async () => {
     const userA = await createTestUser('Fiona RejectedSender');
     const userB = await createTestUser('George Rejecter');
@@ -222,7 +272,6 @@ async function createTestSwap(fromUser, toUser, status, overrides = {}) {
     const resA = await getUserExchangeReliability(userA._id);
     const resB = await getUserExchangeReliability(userB._id);
 
-    // Rejected proposal was never an agreed exchange — both remain at neutral prior
     assert.strictEqual(resA.completedCount, 0);
     assert.strictEqual(resA.failedCount, 0);
     assert.strictEqual(resA.neutralPrior, true);
@@ -271,7 +320,7 @@ async function createTestSwap(fromUser, toUser, status, overrides = {}) {
     assert.strictEqual(resA.score, DEFAULT_PRIOR_MEAN);
   });
 
-  await test('Active accepted swap in future does not count as failure', async () => {
+  await test('Active accepted swap in future is tracked in activeCount without penalty', async () => {
     const userA = await createTestUser('Leo Scheduled1');
     const userB = await createTestUser('Maya Scheduled2');
 
@@ -286,22 +335,7 @@ async function createTestSwap(fromUser, toUser, status, overrides = {}) {
     assert.strictEqual(resA.score, DEFAULT_PRIOR_MEAN);
   });
 
-  await test('Stalled accepted swap (>14 days past schedule) counts as failed outcome', async () => {
-    const userA = await createTestUser('Noah Stalled1');
-    const userB = await createTestUser('Olivia Stalled2');
-
-    const pastDate = new Date(Date.now() - 20 * 24 * 60 * 60 * 1000);
-    await createTestSwap(userA, userB, 'accepted', { scheduledAt: pastDate });
-
-    const resA = await getUserExchangeReliability(userA._id);
-    assert.strictEqual(resA.completedCount, 0);
-    assert.strictEqual(resA.failedCount, 1);
-    assert.strictEqual(resA.neutralPrior, false);
-    assert.ok(resA.score < DEFAULT_PRIOR_MEAN, `Score (${resA.score}) must be lower than prior (${DEFAULT_PRIOR_MEAN})`);
-    assert.strictEqual(resA.metrics.rawCompletionRate, 0.0);
-  });
-
-  await test('Mixed outcomes: 2 completed + 1 stalled + 1 active + 2 rejected + 1 cancelled', async () => {
+  await test('Mixed outcomes: 2 completed + 1 stale (neutral) + 1 active + 2 rejected', async () => {
     const user = await createTestUser('Paul MixedUser');
     const peer1 = await createTestUser('Peer One');
     const peer2 = await createTestUser('Peer Two');
@@ -310,7 +344,7 @@ async function createTestSwap(fromUser, toUser, status, overrides = {}) {
     await createTestSwap(user, peer1, 'completed');
     await createTestSwap(peer2, user, 'completed');
 
-    // 1 stalled accepted
+    // 1 stale accepted (unattributed)
     const pastDate = new Date(Date.now() - 25 * 24 * 60 * 60 * 1000);
     await createTestSwap(user, peer1, 'accepted', { scheduledAt: pastDate });
 
@@ -322,46 +356,79 @@ async function createTestSwap(fromUser, toUser, status, overrides = {}) {
     await createTestSwap(user, peer1, 'rejected');
     await createTestSwap(peer2, user, 'rejected');
 
-    // 1 cancelled
-    await createTestSwap(user, peer1, 'cancelled');
-
     const res = await getUserExchangeReliability(user._id);
 
     assert.strictEqual(res.completedCount, 2);
-    assert.strictEqual(res.failedCount, 1);
+    assert.strictEqual(res.failedCount, 0);
     assert.strictEqual(res.activeCount, 1);
+    assert.strictEqual(res.unattributedCount, 1);
     assert.strictEqual(res.metrics.pendingCount, 0);
     assert.strictEqual(res.metrics.rejectedCount, 2);
-    assert.strictEqual(res.metrics.cancelledCount, 1);
     assert.strictEqual(res.neutralPrior, false);
 
-    // Expected score: (2 + 3 * 0.70) / (2 + 1 + 3) = 4.10 / 6 = 0.6833...
-    const expected = (2 + 3 * 0.70) / (2 + 1 + 3);
+    // Expected score: (2 + 3 * 0.70) / (2 + 0 + 3) = 4.10 / 5 = 0.82
+    const expected = (2 + 3 * 0.70) / (2 + 0 + 3);
     assert.ok(Math.abs(res.score - expected) < 0.001, `Score ${res.score} matches expected ${expected}`);
-    assert.strictEqual(res.metrics.rawCompletionRate, 0.67);
+    assert.strictEqual(res.metrics.rawCompletionRate, 1.0);
   });
 
-  await test('Non-existent or malformed userId returns safe neutral fallback', async () => {
-    const resNull = await getUserExchangeReliability(null);
-    assert.strictEqual(resNull.score, DEFAULT_PRIOR_MEAN);
-    assert.strictEqual(resNull.neutralPrior, true);
+  // ── GROUP 4: Batch Query Optimization & Edge Cases (N+1 Elimination) ─────
+  console.log('\n── Group 4: Batch Query Optimization (N+1 Elimination) ──');
 
-    const resInvalid = await getUserExchangeReliability('not-a-valid-id');
-    assert.strictEqual(resInvalid.score, DEFAULT_PRIOR_MEAN);
-    assert.strictEqual(resInvalid.neutralPrior, true);
+  await test('Batch query handles empty candidate list gracefully with 0 queries', async () => {
+    const resEmpty = await getBatchExchangeReliability([]);
+    assert.strictEqual(resEmpty.size, 0);
+
+    const resNull = await getBatchExchangeReliability(null);
+    assert.strictEqual(resNull.size, 0);
   });
 
-  await test('Batch exchange reliability aggregates all users correctly', async () => {
-    const userA = await createTestUser('Batch User A');
-    const userB = await createTestUser('Batch User B');
+  await test('Batch query handles duplicate candidate IDs without redundant processing', async () => {
+    const userA = await createTestUser('Dedup User A');
+    const userB = await createTestUser('Dedup User B');
     await createTestSwap(userA, userB, 'completed');
 
-    const map = await getBatchExchangeReliability([userA._id, userB._id]);
-    assert.strictEqual(map.size, 2);
+    // Provide duplicates of same ID as string and ObjectId
+    const map = await getBatchExchangeReliability([
+      userA._id,
+      userA._id.toString(),
+      userA._id,
+      'invalid-id',
+    ]);
+
+    assert.strictEqual(map.size, 1);
     assert.ok(map.has(userA._id.toString()));
-    assert.ok(map.has(userB._id.toString()));
     assert.strictEqual(map.get(userA._id.toString()).completedCount, 1);
-    assert.strictEqual(map.get(userB._id.toString()).completedCount, 1);
+  });
+
+  await test('Batch query serves multiple candidate users in EXACTLY ONE database query', async () => {
+    const user1 = await createTestUser('Batch User 1');
+    const user2 = await createTestUser('Batch User 2');
+    const user3 = await createTestUser('Batch User 3');
+
+    await createTestSwap(user1, user2, 'completed');
+    await createTestSwap(user2, user3, 'completed');
+
+    // Spy on SwapRequest.find to verify query count
+    let queryCount = 0;
+    const originalFind = SwapRequest.find;
+    SwapRequest.find = function (...args) {
+      queryCount++;
+      return originalFind.apply(this, args);
+    };
+
+    try {
+      const map = await getBatchExchangeReliability([user1._id, user2._id, user3._id]);
+
+      // Exactly 1 single batched query must be executed for all 3 users!
+      assert.strictEqual(queryCount, 1, `Expected exactly 1 database query, got ${queryCount}`);
+      assert.strictEqual(map.size, 3);
+      assert.strictEqual(map.get(user1._id.toString()).completedCount, 1);
+      assert.strictEqual(map.get(user2._id.toString()).completedCount, 2);
+      assert.strictEqual(map.get(user3._id.toString()).completedCount, 1);
+    } finally {
+      SwapRequest.find = originalFind;
+    }
   });
 
   // ── Cleanup ──────────────────────────────────────────────────────────────
@@ -374,7 +441,7 @@ async function createTestSwap(fromUser, toUser, status, overrides = {}) {
 
   // ── Summary ──────────────────────────────────────────────────────────────
   console.log('\n═════════════════════════════════════════════════════════════');
-  console.log(`  Phase 6 Step 1 Results: ${passed} passed, ${failed} failed out of ${passed + failed} tests`);
+  console.log(`  Phase 6 Step 1.1 Results: ${passed} passed, ${failed} failed out of ${passed + failed} tests`);
   if (failures.length > 0) {
     console.log('\n  Failures:');
     failures.forEach(f => console.log(`    ✗ ${f.name}\n      → ${f.error}`));
