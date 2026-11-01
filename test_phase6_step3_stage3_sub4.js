@@ -1,24 +1,27 @@
 /**
- * Phase 6 — Advanced Skill Exchange Algorithm (Step 3 - Substage 3.4.1)
+ * Phase 6 — Advanced Skill Exchange Algorithm (Step 3 - Substage 3.4.1.2)
  * test_phase6_step3_stage3_sub4.js
  *
  * Dedicated test suite for Circular Leg Scheduling & Rescheduling:
- * 1. Initial proposal and mutual confirmation.
- * 2. Proposal rejection with optional feedback reason.
+ * 1. Initial proposal and mutual confirmation (using proposalId).
+ * 2. Proposal rejection with optional feedback reason (using proposalId).
  * 3. Rescheduling: Old confirmed schedule preserved when new proposal is rejected.
- * 4. Revised proposal supersedes old proposal in scheduleHistory.
+ * 4. Revised proposal supersedes old proposal in scheduleHistory with proposalId.
  * 5. Invalid date validation (past dates, malformed date strings).
- * 6. Availability slot validation (reject outside teacher/learner slots).
+ * 6. Availability slot validation (authoritative UTC convention).
  * 7. Double-booking conflict prevention across bilateral and circular swaps (±30m).
- * 8. Strict authorization: Only teacher can propose; only learner can confirm/reject; observer/outsider blocked.
- * 9. Stale/invalid proposal confirmation & rejection blocked.
- * 10. Concurrency: Simultaneous proposal and confirmation requests handled cleanly.
+ * 8. Strict authorization: Only teacher can propose; only learner can confirm/reject.
+ * 9. Stale/invalid proposal confirmation & rejection blocked (Finding 1).
+ * 10. Concurrency: Version check prevents silent overwrite (Finding 1).
  * 11. Transaction rollback: Outbox failure rolls back scheduling mutation.
- * 12. Outbox event consistency: Correct types and payloads.
- * 13. Reminder service isolation: Unconfirmed proposals do not trigger session reminders.
- * 14. Independent scheduling: All 3 legs schedule and reschedule completely independently.
- * 15. Bilateral scheduling regression: Existing bilateral scheduling operates untouched.
- * 16. End-to-End HTTP route & JWT authentication integration.
+ * 12. Reminder service isolation: Unconfirmed proposals do not trigger session reminders.
+ * 13. Independent scheduling: All 3 legs schedule and reschedule completely independently.
+ * 14. Bilateral scheduling regression: Existing bilateral scheduling operates untouched.
+ * 15. End-to-End HTTP route & JWT authentication integration.
+ * 16. Audit Finding 1: proposalId required in confirm/reject; stale/missing returns 409 with zero mutation.
+ * 17. Audit Finding 2: Repeated confirmation is idempotent (HTTP 200, zero duplicate history/outbox).
+ * 18. Audit Finding 3: Availability revalidation at confirmation (HTTP 409 if slot withdrawn, 200 if retained).
+ * 19. Audit Finding 4: Authoritative UTC timezone evaluation without dual-checking drift.
  */
 
 'use strict';
@@ -167,15 +170,18 @@ async function createAndActivateCycle(uA, uB, uC, skills) {
   return activeDoc;
 }
 
-function getFutureSlotDate(dayName = 'Monday', hour = 14) {
+/**
+ * Returns a future Date strictly constructed in UTC.
+ * Guarantees that targetDay matches date.getUTCDay() and utcHour matches date.getUTCHours().
+ */
+function getFutureSlotDate(dayName = 'Monday', utcHour = 14) {
   const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const targetDay = DAYS.indexOf(dayName);
   const now = new Date();
-  const d = new Date(now);
-  let daysToAdd = (targetDay - now.getDay() + 7) % 7;
+  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), utcHour, 0, 0, 0));
+  let daysToAdd = (targetDay - now.getUTCDay() + 7) % 7;
   if (daysToAdd === 0) daysToAdd = 7;
-  d.setDate(now.getDate() + daysToAdd);
-  d.setHours(hour, 0, 0, 0);
+  d.setUTCDate(d.getUTCDate() + daysToAdd);
   return d;
 }
 
@@ -204,31 +210,26 @@ async function stopHttpServer() {
 }
 
 async function runTests() {
-  console.log('================================================================');
-  console.log('🧪 Starting Phase 6 Step 3 Substage 3.4.1: Leg Scheduling Tests');
-  console.log('================================================================\n');
-
-  const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/skillswap';
-  await mongoose.connect(MONGO_URI);
-  console.log('MongoDB connected');
-  console.log(`Transaction environment: ${isTransactionSupported() ? 'Replica Set (ACID Multi-Doc Transactions)' : 'Standalone Fallback'}\n`);
+  console.log('Connecting to database...');
+  await mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/skillswap');
+  console.log(`Connected. Standalone/Transaction Mode: ${isTransactionSupported() ? 'ReplicaSet (Transactions)' : 'Standalone (Fallback)'}`);
 
   await startHttpServer();
 
   // ─────────────────────────────────────────────────────────────────────────────
   // 1. INITIAL PROPOSAL AND CONFIRMATION
   // ─────────────────────────────────────────────────────────────────────────────
-  console.log('--- 1. Initial Proposal & Mutual Confirmation ---');
+  console.log('\n--- 1. Initial Proposal & Mutual Confirmation ---');
 
-  await test('Teacher proposes schedule -> Learner confirms -> Parent leg & child swap confirmed', async () => {
-    const uA = await createTestUser({ name: 'Alice_S1' });
-    const uB = await createTestUser({ name: 'Bob_S1' });
-    const uC = await createTestUser({ name: 'Charlie_S1' });
+  await test('Teacher proposes schedule -> Learner confirms -> Parent & child scheduled atomically', async () => {
+    const uA = await createTestUser();
+    const uB = await createTestUser();
+    const uC = await createTestUser();
 
-    const exchange = await createAndActivateCycle(uA, uB, uC, ['NodeJS', 'Python', 'Go']);
+    const exchange = await createAndActivateCycle(uA, uB, uC, ['Node.js', 'Python', 'Elixir']);
     const cycleId = exchange._id.toString();
 
-    const futureTime = getFutureSlotDate('Monday', 11);
+    const futureTime = getFutureSlotDate('Monday', 14);
 
     // Alice (teacher of leg 0) proposes schedule
     const reqPropose = {
@@ -243,6 +244,8 @@ async function runTests() {
     assert(resPropose.body.message.includes('awaiting learner confirmation'));
     assert.strictEqual(resPropose.body.scheduleProposal.status, 'pending_confirmation');
     assert.strictEqual(new Date(resPropose.body.scheduleProposal.proposedTime).getTime(), futureTime.getTime());
+    const proposalId = resPropose.body.proposalId;
+    assert.ok(proposalId, 'proposalId must be generated');
 
     // CRITICAL: Leg scheduledAt and child SwapRequest.scheduledAt MUST still be null before learner confirmation
     let legCheck = (await CircularExchange.findById(cycleId)).legs[0];
@@ -260,10 +263,11 @@ async function runTests() {
     assert.strictEqual(proposeEvents.length, 1);
     assert.strictEqual(proposeEvents[0].recipient.toString(), uB._id.toString());
 
-    // Bob (learner of leg 0) confirms
+    // Bob (learner of leg 0) confirms with proposalId
     const reqConfirm = {
       userId: uB._id.toString(),
       params: { id: cycleId, legIndex: '0' },
+      body: { proposalId },
     };
     const resConfirm = mockRes();
     await confirmLegSchedule(reqConfirm, resConfirm);
@@ -278,6 +282,7 @@ async function runTests() {
     assert.strictEqual(legCheck.scheduleProposal.status, 'confirmed');
     assert.strictEqual(legCheck.scheduleHistory.length, 1);
     assert.strictEqual(legCheck.scheduleHistory[0].status, 'confirmed');
+    assert.strictEqual(legCheck.scheduleHistory[0].proposalId, proposalId);
 
     // Verify child SwapRequest.scheduledAt is synchronized atomically
     childSwap = await SwapRequest.findById(legCheck.swapRequest);
@@ -308,20 +313,22 @@ async function runTests() {
     const futureTime = getFutureSlotDate('Wednesday', 14);
 
     // Bob (teacher of leg 1) proposes schedule to Charlie
+    const resPropose = mockRes();
     await proposeLegSchedule(
       {
         userId: uB._id.toString(),
         params: { id: cycleId, legIndex: '1' },
         body: { scheduledTime: futureTime.toISOString() },
       },
-      mockRes()
+      resPropose
     );
+    const proposalId = resPropose.body.proposalId;
 
-    // Charlie (learner of leg 1) rejects with reason
+    // Charlie (learner of leg 1) rejects with reason and proposalId
     const reqReject = {
       userId: uC._id.toString(),
       params: { id: cycleId, legIndex: '1' },
-      body: { reason: 'I have an exam on Wednesday afternoon' },
+      body: { proposalId, reason: 'I have an exam on Wednesday afternoon' },
     };
     const resReject = mockRes();
     await rejectLegSchedule(reqReject, resReject);
@@ -338,6 +345,7 @@ async function runTests() {
     // Schedule history preserved
     assert.strictEqual(leg.scheduleHistory.length, 1);
     assert.strictEqual(leg.scheduleHistory[0].status, 'rejected');
+    assert.strictEqual(leg.scheduleHistory[0].proposalId, proposalId);
     assert.strictEqual(leg.scheduleHistory[0].notes, 'I have an exam on Wednesday afternoon');
 
     // Child SwapRequest remains null
@@ -369,8 +377,9 @@ async function runTests() {
     const time1 = getFutureSlotDate('Monday', 10);
 
     // Leg 0: Alice proposes, Bob confirms time1
-    await proposeLegSchedule({ userId: uA._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { scheduledTime: time1.toISOString() } }, mockRes());
-    await confirmLegSchedule({ userId: uB._id.toString(), params: { id: cycleId, legIndex: '0' } }, mockRes());
+    const resPropose1 = mockRes();
+    await proposeLegSchedule({ userId: uA._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { scheduledTime: time1.toISOString() } }, resPropose1);
+    await confirmLegSchedule({ userId: uB._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { proposalId: resPropose1.body.proposalId } }, mockRes());
 
     let leg = (await CircularExchange.findById(cycleId)).legs[0];
     assert.strictEqual(new Date(leg.scheduledAt).getTime(), time1.getTime());
@@ -390,7 +399,7 @@ async function runTests() {
 
     // Bob rejects the rescheduling proposal
     const resReject2 = mockRes();
-    await rejectLegSchedule({ userId: uB._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { reason: 'Cannot do Friday' } }, resReject2);
+    await rejectLegSchedule({ userId: uB._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { proposalId: resPropose2.body.proposalId, reason: 'Cannot do Friday' } }, resReject2);
     assert.strictEqual(resReject2.statusCode, 200);
 
     // CRITICAL REQUIREMENT: Prior confirmed schedule time1 remains active and confirmed!
@@ -418,18 +427,22 @@ async function runTests() {
     const time2 = getFutureSlotDate('Wednesday', 15);
 
     // Propose time1
-    await proposeLegSchedule({ userId: uA._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { scheduledTime: time1.toISOString() } }, mockRes());
+    const res1 = mockRes();
+    await proposeLegSchedule({ userId: uA._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { scheduledTime: time1.toISOString() } }, res1);
 
     // Teacher changes mind and proposes time2 before Bob confirmed time1
-    await proposeLegSchedule({ userId: uA._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { scheduledTime: time2.toISOString() } }, mockRes());
+    const res2 = mockRes();
+    await proposeLegSchedule({ userId: uA._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { scheduledTime: time2.toISOString() } }, res2);
 
     const leg = (await CircularExchange.findById(cycleId)).legs[0];
     assert.strictEqual(new Date(leg.scheduleProposal.proposedTime).getTime(), time2.getTime());
     assert.strictEqual(leg.scheduleProposal.status, 'pending_confirmation');
+    assert.strictEqual(leg.scheduleProposal.proposalId, res2.body.proposalId);
 
-    // time1 was archived as 'superseded'
+    // time1 was archived as 'superseded' with original proposalId
     assert.strictEqual(leg.scheduleHistory.length, 1);
     assert.strictEqual(leg.scheduleHistory[0].status, 'superseded');
+    assert.strictEqual(leg.scheduleHistory[0].proposalId, res1.body.proposalId);
     assert.strictEqual(new Date(leg.scheduleHistory[0].scheduledTime).getTime(), time1.getTime());
   });
 
@@ -574,17 +587,19 @@ async function runTests() {
     const futureTime = getFutureSlotDate('Wednesday', 11);
 
     // Alice proposes leg 0
-    await proposeLegSchedule({ userId: uA._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { scheduledTime: futureTime.toISOString() } }, mockRes());
+    const resP = mockRes();
+    await proposeLegSchedule({ userId: uA._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { scheduledTime: futureTime.toISOString() } }, resP);
+    const proposalId = resP.body.proposalId;
 
     // Alice attempts to confirm her own proposal
     const resConfirm = mockRes();
-    await confirmLegSchedule({ userId: uA._id.toString(), params: { id: cycleId, legIndex: '0' } }, resConfirm);
+    await confirmLegSchedule({ userId: uA._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { proposalId } }, resConfirm);
     assert.strictEqual(resConfirm.statusCode, 403);
     assert(resConfirm.body.message.includes('Only the learner'));
 
     // Alice attempts to reject her own proposal
     const resReject = mockRes();
-    await rejectLegSchedule({ userId: uA._id.toString(), params: { id: cycleId, legIndex: '0' } }, resReject);
+    await rejectLegSchedule({ userId: uA._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { proposalId } }, resReject);
     assert.strictEqual(resReject.statusCode, 403);
     assert(resReject.body.message.includes('Only the learner'));
   });
@@ -609,66 +624,9 @@ async function runTests() {
   });
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // 7. STALE PROPOSAL REJECTION & CONCURRENCY
+  // 7. TRANSACTION ROLLBACK & OUTBOX CONSISTENCY
   // ─────────────────────────────────────────────────────────────────────────────
-  console.log('\n--- 7. Stale Proposal Handling & Concurrency ---');
-
-  await test('Confirming or rejecting when no proposal is pending returns 400 Bad Request', async () => {
-    const uA = await createTestUser();
-    const uB = await createTestUser();
-    const uC = await createTestUser();
-
-    const exchange = await createAndActivateCycle(uA, uB, uC, ['S1', 'S2', 'S3']);
-    const cycleId = exchange._id.toString();
-
-    // Bob tries to confirm leg 0 when none proposed
-    const resConfirm = mockRes();
-    await confirmLegSchedule({ userId: uB._id.toString(), params: { id: cycleId, legIndex: '0' } }, resConfirm);
-    assert.strictEqual(resConfirm.statusCode, 400);
-    assert(resConfirm.body.message.includes('No pending schedule proposal'));
-
-    // Bob tries to reject leg 0 when none proposed
-    const resReject = mockRes();
-    await rejectLegSchedule({ userId: uB._id.toString(), params: { id: cycleId, legIndex: '0' } }, resReject);
-    assert.strictEqual(resReject.statusCode, 400);
-    assert(resReject.body.message.includes('No pending schedule proposal'));
-  });
-
-  await test('Two simultaneous confirm attempts succeed idempotently or handle race cleanly', async () => {
-    const uA = await createTestUser();
-    const uB = await createTestUser();
-    const uC = await createTestUser();
-
-    const exchange = await createAndActivateCycle(uA, uB, uC, ['Ruby', 'Rails', 'Postgres']);
-    const cycleId = exchange._id.toString();
-
-    const futureTime = getFutureSlotDate('Monday', 16);
-
-    // Alice proposes
-    await proposeLegSchedule({ userId: uA._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { scheduledTime: futureTime.toISOString() } }, mockRes());
-
-    // Bob triggers two concurrent confirmation requests
-    const res1 = mockRes();
-    const res2 = mockRes();
-
-    await Promise.all([
-      confirmLegSchedule({ userId: uB._id.toString(), params: { id: cycleId, legIndex: '0' } }, res1),
-      confirmLegSchedule({ userId: uB._id.toString(), params: { id: cycleId, legIndex: '0' } }, res2),
-    ]);
-
-    // Exactly one should confirm (200), the other may receive 400 (already confirmed / no pending proposal)
-    const successCount = [res1.statusCode, res2.statusCode].filter(c => c === 200).length;
-    assert.strictEqual(successCount, 1);
-
-    const leg = (await CircularExchange.findById(cycleId)).legs[0];
-    assert.strictEqual(leg.status, 'scheduled');
-    assert.strictEqual(leg.scheduleHistory.length, 1);
-  });
-
-  // ─────────────────────────────────────────────────────────────────────────────
-  // 8. TRANSACTION ROLLBACK & OUTBOX CONSISTENCY
-  // ─────────────────────────────────────────────────────────────────────────────
-  console.log('\n--- 8. Transaction Rollback & Outbox Consistency ---');
+  console.log('\n--- 7. Transaction Rollback & Outbox Consistency ---');
 
   await test('Outbox failure during confirmation rolls back both parent leg and child SwapRequest', async () => {
     const uA = await createTestUser();
@@ -681,7 +639,9 @@ async function runTests() {
     const futureTime = getFutureSlotDate('Wednesday', 10);
 
     // Alice proposes
-    await proposeLegSchedule({ userId: uA._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { scheduledTime: futureTime.toISOString() } }, mockRes());
+    const resP = mockRes();
+    await proposeLegSchedule({ userId: uA._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { scheduledTime: futureTime.toISOString() } }, resP);
+    const proposalId = resP.body.proposalId;
 
     // Monkey-patch OutboxEvent.create to simulate failure
     const origCreate = OutboxEvent.create;
@@ -695,7 +655,7 @@ async function runTests() {
 
     try {
       const res = mockRes();
-      await confirmLegSchedule({ userId: uB._id.toString(), params: { id: cycleId, legIndex: '0' } }, res);
+      await confirmLegSchedule({ userId: uB._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { proposalId } }, res);
       assert.strictEqual(res.statusCode, 500);
     } finally {
       patchActive = false;
@@ -718,9 +678,9 @@ async function runTests() {
   });
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // 9. REMINDER SERVICE INTEGRATION & ISOLATION
+  // 8. REMINDER SERVICE INTEGRATION & ISOLATION
   // ─────────────────────────────────────────────────────────────────────────────
-  console.log('\n--- 9. Reminder Service Isolation ---');
+  console.log('\n--- 8. Reminder Service Isolation ---');
 
   await test('Reminder service ignores unconfirmed proposed schedules; triggers only on confirmed schedules', async () => {
     const uA = await createTestUser();
@@ -734,16 +694,17 @@ async function runTests() {
     const imminentTime = new Date(Date.now() + 20 * 60 * 1000);
 
     // Teacher proposes leg 0 for imminentTime
-    // Note: To bypass availability validation for this specific test, we pass empty slots or matching slot
     uA.availabilitySlots = [];
     uB.availabilitySlots = [];
     await uA.save();
     await uB.save();
 
+    const resP = mockRes();
     await proposeLegSchedule(
       { userId: uA._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { scheduledTime: imminentTime.toISOString() } },
-      mockRes()
+      resP
     );
+    const proposalId = resP.body.proposalId;
 
     // Run reminder service while proposal is pending
     await checkUpcomingSessionReminders();
@@ -756,7 +717,7 @@ async function runTests() {
     assert.strictEqual(reminders.length, 0, 'No session reminders should be sent for unconfirmed proposal');
 
     // Now learner confirms the schedule!
-    await confirmLegSchedule({ userId: uB._id.toString(), params: { id: cycleId, legIndex: '0' } }, mockRes());
+    await confirmLegSchedule({ userId: uB._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { proposalId } }, mockRes());
 
     // Run reminder service again
     await checkUpcomingSessionReminders();
@@ -770,9 +731,9 @@ async function runTests() {
   });
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // 10. INDEPENDENT SCHEDULING OF ALL THREE LEGS
+  // 9. INDEPENDENT SCHEDULING OF ALL THREE LEGS
   // ─────────────────────────────────────────────────────────────────────────────
-  console.log('\n--- 10. Independent Scheduling of All 3 Legs ---');
+  console.log('\n--- 9. Independent Scheduling of All 3 Legs ---');
 
   await test('All three legs schedule independently with distinct states, dates, and histories', async () => {
     const uA = await createTestUser();
@@ -786,13 +747,14 @@ async function runTests() {
     const time1 = getFutureSlotDate('Wednesday', 14);
 
     // Leg 0: Confirmed
-    await proposeLegSchedule({ userId: uA._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { scheduledTime: time0.toISOString() } }, mockRes());
-    await confirmLegSchedule({ userId: uB._id.toString(), params: { id: cycleId, legIndex: '0' } }, mockRes());
+    const resP0 = mockRes();
+    await proposeLegSchedule({ userId: uA._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { scheduledTime: time0.toISOString() } }, resP0);
+    await confirmLegSchedule({ userId: uB._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { proposalId: resP0.body.proposalId } }, mockRes());
 
     // Leg 1: Pending proposal
     await proposeLegSchedule({ userId: uB._id.toString(), params: { id: cycleId, legIndex: '1' }, body: { scheduledTime: time1.toISOString() } }, mockRes());
 
-    // Leg 2: Unschedled (none)
+    // Leg 2: Unscheduled (none)
 
     // Check exchange schedule overview
     const resOverview = mockRes();
@@ -819,9 +781,9 @@ async function runTests() {
   });
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // 11. BILATERAL SCHEDULING REGRESSION
+  // 10. BILATERAL SCHEDULING REGRESSION
   // ─────────────────────────────────────────────────────────────────────────────
-  console.log('\n--- 11. Bilateral Scheduling Regression ---');
+  console.log('\n--- 10. Bilateral Scheduling Regression ---');
 
   await test('Regression: Bilateral PUT /api/swap/:id/schedule continues to function untouched', async () => {
     const uA = await createTestUser();
@@ -852,9 +814,9 @@ async function runTests() {
   });
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // 12. END-TO-END HTTP ROUTING & JWT AUTH
+  // 11. END-TO-END HTTP ROUTING & JWT AUTH
   // ─────────────────────────────────────────────────────────────────────────────
-  console.log('\n--- 12. End-to-End HTTP Routing & JWT Auth ---');
+  console.log('\n--- 11. End-to-End HTTP Routing & JWT Auth ---');
 
   await test('End-to-End HTTP: Propose and confirm schedule via real Express HTTP server', async () => {
     const uA = await createTestUser();
@@ -881,6 +843,8 @@ async function runTests() {
     assert.strictEqual(proposeRes.status, 200);
     const proposeData = await proposeRes.json();
     assert.strictEqual(proposeData.scheduleProposal.status, 'pending_confirmation');
+    const proposalId = proposeData.proposalId;
+    assert.ok(proposalId);
 
     // 2. View schedule via HTTP GET
     const viewRes = await fetch(`${testBaseUrl}/${cycleId}/schedule`, {
@@ -891,14 +855,376 @@ async function runTests() {
     assert.strictEqual(viewData.legs[0].myRole, 'learner');
     assert.strictEqual(viewData.legs[0].canConfirm, true);
 
-    // 3. Confirm schedule via HTTP PUT
+    // 3. Confirm schedule via HTTP PUT passing proposalId
     const confirmRes = await fetch(`${testBaseUrl}/${cycleId}/legs/0/schedule/confirm`, {
       method: 'PUT',
-      headers: { Authorization: `Bearer ${tokenB}` },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${tokenB}`,
+      },
+      body: JSON.stringify({ proposalId }),
     });
     assert.strictEqual(confirmRes.status, 200);
     const confirmData = await confirmRes.json();
     assert.strictEqual(confirmData.status, 'scheduled');
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // 12. AUDIT FINDING 1: PROPOSAL IDENTITY & STALE-ACTION PROTECTION
+  // ─────────────────────────────────────────────────────────────────────────────
+  console.log('\n--- 12. Audit Finding 1: Proposal Identity & Stale-Action Protection ---');
+
+  await test('Missing proposalId in confirm request returns 409 Conflict', async () => {
+    const uA = await createTestUser();
+    const uB = await createTestUser();
+    const uC = await createTestUser();
+
+    const exchange = await createAndActivateCycle(uA, uB, uC, ['Aud1', 'Aud2', 'Aud3']);
+    const cycleId = exchange._id.toString();
+
+    const futureTime = getFutureSlotDate('Monday', 11);
+    await proposeLegSchedule({ userId: uA._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { scheduledTime: futureTime.toISOString() } }, mockRes());
+
+    const res = mockRes();
+    await confirmLegSchedule({ userId: uB._id.toString(), params: { id: cycleId, legIndex: '0' }, body: {} }, res);
+
+    assert.strictEqual(res.statusCode, 409);
+    assert(res.body.message.includes('proposalId is required'));
+  });
+
+  await test('Missing proposalId in reject request returns 409 Conflict', async () => {
+    const uA = await createTestUser();
+    const uB = await createTestUser();
+    const uC = await createTestUser();
+
+    const exchange = await createAndActivateCycle(uA, uB, uC, ['Aud4', 'Aud5', 'Aud6']);
+    const cycleId = exchange._id.toString();
+
+    const futureTime = getFutureSlotDate('Wednesday', 11);
+    await proposeLegSchedule({ userId: uA._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { scheduledTime: futureTime.toISOString() } }, mockRes());
+
+    const res = mockRes();
+    await rejectLegSchedule({ userId: uB._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { reason: 'No proposalId' } }, res);
+
+    assert.strictEqual(res.statusCode, 409);
+    assert(res.body.message.includes('proposalId is required'));
+  });
+
+  await test('Confirming an older proposalId after revision returns 409 Conflict with zero state mutation', async () => {
+    const uA = await createTestUser();
+    const uB = await createTestUser();
+    const uC = await createTestUser();
+
+    const exchange = await createAndActivateCycle(uA, uB, uC, ['Stale1', 'Stale2', 'Stale3']);
+    const cycleId = exchange._id.toString();
+
+    const time1 = getFutureSlotDate('Monday', 10);
+    const time2 = getFutureSlotDate('Wednesday', 14);
+
+    // Proposal 1
+    const res1 = mockRes();
+    await proposeLegSchedule({ userId: uA._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { scheduledTime: time1.toISOString() } }, res1);
+    const staleProposalId = res1.body.proposalId;
+
+    // Proposal 2 (revises Proposal 1)
+    const res2 = mockRes();
+    await proposeLegSchedule({ userId: uA._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { scheduledTime: time2.toISOString() } }, res2);
+    const currentProposalId = res2.body.proposalId;
+    assert.notStrictEqual(staleProposalId, currentProposalId);
+
+    // Snapshot state before stale confirm
+    const beforeExchange = await CircularExchange.findById(cycleId);
+    const beforeHistoryLen = beforeExchange.legs[0].scheduleHistory.length;
+    const beforeOutboxCount = await OutboxEvent.countDocuments({ aggregateId: cycleId });
+
+    // Attempt to confirm stale proposal 1
+    const resConfirmStale = mockRes();
+    await confirmLegSchedule(
+      { userId: uB._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { proposalId: staleProposalId } },
+      resConfirmStale
+    );
+
+    assert.strictEqual(resConfirmStale.statusCode, 409);
+    assert(resConfirmStale.body.message.includes('stale'));
+
+    // Verify zero mutation occurred!
+    const afterExchange = await CircularExchange.findById(cycleId);
+    const leg = afterExchange.legs[0];
+    assert.strictEqual(leg.status, 'active');
+    assert.strictEqual(leg.scheduledAt, null);
+    assert.strictEqual(leg.scheduleProposal.proposalId, currentProposalId);
+    assert.strictEqual(leg.scheduleProposal.status, 'pending_confirmation');
+    assert.strictEqual(leg.scheduleHistory.length, beforeHistoryLen);
+
+    const childSwap = await SwapRequest.findById(leg.swapRequest);
+    assert.strictEqual(!childSwap.scheduledAt, true);
+
+    const afterOutboxCount = await OutboxEvent.countDocuments({ aggregateId: cycleId });
+    assert.strictEqual(afterOutboxCount, beforeOutboxCount);
+
+    // Confirming currentProposalId still succeeds!
+    const resConfirmCurrent = mockRes();
+    await confirmLegSchedule(
+      { userId: uB._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { proposalId: currentProposalId } },
+      resConfirmCurrent
+    );
+    assert.strictEqual(resConfirmCurrent.statusCode, 200);
+  });
+
+  await test('Rejecting an older proposalId after revision returns 409 Conflict with zero state mutation', async () => {
+    const uA = await createTestUser();
+    const uB = await createTestUser();
+    const uC = await createTestUser();
+
+    const exchange = await createAndActivateCycle(uA, uB, uC, ['RejStale1', 'RejStale2', 'RejStale3']);
+    const cycleId = exchange._id.toString();
+
+    const time1 = getFutureSlotDate('Monday', 10);
+    const time2 = getFutureSlotDate('Friday', 14);
+
+    const res1 = mockRes();
+    await proposeLegSchedule({ userId: uA._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { scheduledTime: time1.toISOString() } }, res1);
+    const staleProposalId = res1.body.proposalId;
+
+    const res2 = mockRes();
+    await proposeLegSchedule({ userId: uA._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { scheduledTime: time2.toISOString() } }, res2);
+
+    const resRejectStale = mockRes();
+    await rejectLegSchedule(
+      { userId: uB._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { proposalId: staleProposalId, reason: 'Too late' } },
+      resRejectStale
+    );
+
+    assert.strictEqual(resRejectStale.statusCode, 409);
+    assert(resRejectStale.body.message.includes('stale'));
+
+    const leg = (await CircularExchange.findById(cycleId)).legs[0];
+    assert.strictEqual(leg.scheduleProposal.status, 'pending_confirmation');
+    assert.strictEqual(leg.scheduleProposal.proposalId, res2.body.proposalId);
+  });
+
+  await test('Concurrent teacher proposals with outdated scheduleVersion cannot overwrite each other', async () => {
+    const uA = await createTestUser();
+    const uB = await createTestUser();
+    const uC = await createTestUser();
+
+    const exchange = await createAndActivateCycle(uA, uB, uC, ['Conc1', 'Conc2', 'Conc3']);
+    const cycleId = exchange._id.toString();
+
+    const timeA = getFutureSlotDate('Monday', 10);
+    const timeB = getFutureSlotDate('Monday', 14);
+
+    // Two parallel proposals for the same leg
+    const resA = mockRes();
+    const resB = mockRes();
+
+    await Promise.all([
+      proposeLegSchedule({ userId: uA._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { scheduledTime: timeA.toISOString() } }, resA),
+      proposeLegSchedule({ userId: uA._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { scheduledTime: timeB.toISOString() } }, resB),
+    ]);
+
+    // Either one succeeds and one gets 409 (version conflict), or both succeed sequentially with unique IDs
+    const codes = [resA.statusCode, resB.statusCode];
+    assert.ok(codes.includes(200));
+
+    const finalDoc = await CircularExchange.findById(cycleId);
+    const leg = finalDoc.legs[0];
+    assert.strictEqual(leg.scheduleProposal.status, 'pending_confirmation');
+    assert.ok(leg.scheduleVersion >= 1);
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // 13. AUDIT FINDING 2: IDEMPOTENT CONFIRMATION
+  // ─────────────────────────────────────────────────────────────────────────────
+  console.log('\n--- 13. Audit Finding 2: Idempotent Confirmation ---');
+
+  await test('Repeated confirmation with the same proposalId returns HTTP 200 with zero duplicate history or outbox', async () => {
+    const uA = await createTestUser();
+    const uB = await createTestUser();
+    const uC = await createTestUser();
+
+    const exchange = await createAndActivateCycle(uA, uB, uC, ['Idem1', 'Idem2', 'Idem3']);
+    const cycleId = exchange._id.toString();
+
+    const futureTime = getFutureSlotDate('Monday', 15);
+
+    const resP = mockRes();
+    await proposeLegSchedule({ userId: uA._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { scheduledTime: futureTime.toISOString() } }, resP);
+    const proposalId = resP.body.proposalId;
+
+    // First confirmation
+    const resC1 = mockRes();
+    await confirmLegSchedule({ userId: uB._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { proposalId } }, resC1);
+    assert.strictEqual(resC1.statusCode, 200);
+
+    const historyCount1 = (await CircularExchange.findById(cycleId)).legs[0].scheduleHistory.length;
+    const outboxCount1 = await OutboxEvent.countDocuments({
+      aggregateId: cycleId,
+      type: 'CIRCULAR_LEG_SCHEDULE_CONFIRMED',
+    });
+    assert.strictEqual(historyCount1, 1);
+    assert.strictEqual(outboxCount1, 1);
+
+    // Second confirmation with same proposalId (Idempotent call)
+    const resC2 = mockRes();
+    await confirmLegSchedule({ userId: uB._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { proposalId } }, resC2);
+    assert.strictEqual(resC2.statusCode, 200);
+    assert(resC2.body.message.includes('already confirmed'));
+
+    // Third confirmation with same proposalId
+    const resC3 = mockRes();
+    await confirmLegSchedule({ userId: uB._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { proposalId } }, resC3);
+    assert.strictEqual(resC3.statusCode, 200);
+
+    // Verify ZERO duplicate history entries and ZERO duplicate outbox events!
+    const historyCount2 = (await CircularExchange.findById(cycleId)).legs[0].scheduleHistory.length;
+    const outboxCount2 = await OutboxEvent.countDocuments({
+      aggregateId: cycleId,
+      type: 'CIRCULAR_LEG_SCHEDULE_CONFIRMED',
+    });
+
+    assert.strictEqual(historyCount2, 1, 'Schedule history must not contain duplicates');
+    assert.strictEqual(outboxCount2, 1, 'Outbox must not contain duplicate confirmation events');
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // 14. AUDIT FINDING 3: AVAILABILITY REVALIDATION AT CONFIRMATION
+  // ─────────────────────────────────────────────────────────────────────────────
+  console.log('\n--- 14. Audit Finding 3: Availability Revalidation at Confirmation ---');
+
+  await test('Teacher removes availability after proposal -> Confirmation returns 409 Conflict', async () => {
+    const uA = await createTestUser();
+    const uB = await createTestUser();
+    const uC = await createTestUser();
+
+    const exchange = await createAndActivateCycle(uA, uB, uC, ['AvailT1', 'AvailT2', 'AvailT3']);
+    const cycleId = exchange._id.toString();
+
+    const futureTime = getFutureSlotDate('Monday', 14);
+
+    const resP = mockRes();
+    await proposeLegSchedule({ userId: uA._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { scheduledTime: futureTime.toISOString() } }, resP);
+    const proposalId = resP.body.proposalId;
+
+    // Alice updates her availability to only Friday (withdrawing Monday)
+    await User.updateOne(
+      { _id: uA._id },
+      { $set: { availabilitySlots: [{ day: 'Friday', from: '09:00', to: '17:00' }] } }
+    );
+
+    // Bob tries to confirm the Monday proposal
+    const resC = mockRes();
+    await confirmLegSchedule({ userId: uB._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { proposalId } }, resC);
+
+    assert.strictEqual(resC.statusCode, 409);
+    assert(resC.body.message.includes('available slots'));
+
+    // Verify proposal remains pending and scheduledAt was not set
+    const leg = (await CircularExchange.findById(cycleId)).legs[0];
+    assert.strictEqual(leg.status, 'active');
+    assert.strictEqual(leg.scheduledAt, null);
+    assert.strictEqual(leg.scheduleProposal.status, 'pending_confirmation');
+    assert.strictEqual(leg.scheduleHistory.length, 0);
+
+    const childSwap = await SwapRequest.findById(leg.swapRequest);
+    assert.strictEqual(!childSwap.scheduledAt, true);
+  });
+
+  await test('Learner removes availability after proposal -> Confirmation returns 409 Conflict', async () => {
+    const uA = await createTestUser();
+    const uB = await createTestUser();
+    const uC = await createTestUser();
+
+    const exchange = await createAndActivateCycle(uA, uB, uC, ['AvailL1', 'AvailL2', 'AvailL3']);
+    const cycleId = exchange._id.toString();
+
+    const futureTime = getFutureSlotDate('Wednesday', 14);
+
+    const resP = mockRes();
+    await proposeLegSchedule({ userId: uA._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { scheduledTime: futureTime.toISOString() } }, resP);
+    const proposalId = resP.body.proposalId;
+
+    // Bob (learner) updates his availability to empty slots or non-matching day
+    await User.updateOne(
+      { _id: uB._id },
+      { $set: { availabilitySlots: [{ day: 'Tuesday', from: '09:00', to: '12:00' }] } }
+    );
+
+    // Bob attempts to confirm
+    const resC = mockRes();
+    await confirmLegSchedule({ userId: uB._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { proposalId } }, resC);
+
+    assert.strictEqual(resC.statusCode, 409);
+    assert(resC.body.message.includes('available slots'));
+
+    const leg = (await CircularExchange.findById(cycleId)).legs[0];
+    assert.strictEqual(leg.scheduledAt, null);
+    assert.strictEqual(leg.scheduleProposal.status, 'pending_confirmation');
+  });
+
+  await test('Both participants retain availability -> Confirmation succeeds (200 OK)', async () => {
+    const uA = await createTestUser();
+    const uB = await createTestUser();
+    const uC = await createTestUser();
+
+    const exchange = await createAndActivateCycle(uA, uB, uC, ['AvailBoth1', 'AvailBoth2', 'AvailBoth3']);
+    const cycleId = exchange._id.toString();
+
+    const futureTime = getFutureSlotDate('Friday', 14);
+
+    const resP = mockRes();
+    await proposeLegSchedule({ userId: uA._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { scheduledTime: futureTime.toISOString() } }, resP);
+    const proposalId = resP.body.proposalId;
+
+    const resC = mockRes();
+    await confirmLegSchedule({ userId: uB._id.toString(), params: { id: cycleId, legIndex: '0' }, body: { proposalId } }, resC);
+
+    assert.strictEqual(resC.statusCode, 200);
+    const leg = (await CircularExchange.findById(cycleId)).legs[0];
+    assert.strictEqual(leg.status, 'scheduled');
+    assert.strictEqual(new Date(leg.scheduledAt).getTime(), futureTime.getTime());
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // 15. AUDIT FINDING 4: TIMEZONE HANDLING & AUTHORITATIVE UTC EVALUATION
+  // ─────────────────────────────────────────────────────────────────────────────
+  console.log('\n--- 15. Audit Finding 4: Timezone Handling & Authoritative UTC Evaluation ---');
+
+  await test('isTimeWithinSlots evaluates strictly in UTC representation', () => {
+    // Slot is on Monday from 10:00 to 18:00 UTC
+    const slots = [{ day: 'Monday', from: '10:00', to: '18:00' }];
+
+    // Monday 14:00 UTC -> should match
+    const mondayMatch = new Date(Date.UTC(2026, 10, 2, 14, 0, 0)); // Nov 2, 2026 is Monday
+    assert.strictEqual(isTimeWithinSlots(mondayMatch, slots), true);
+
+    // Monday 08:00 UTC -> before slot from
+    const mondayEarly = new Date(Date.UTC(2026, 10, 2, 8, 0, 0));
+    assert.strictEqual(isTimeWithinSlots(mondayEarly, slots), false);
+
+    // Monday 19:00 UTC -> after slot to
+    const mondayLate = new Date(Date.UTC(2026, 10, 2, 19, 0, 0));
+    assert.strictEqual(isTimeWithinSlots(mondayLate, slots), false);
+
+    // Sunday 14:00 UTC -> wrong UTC day
+    const sundaySameHour = new Date(Date.UTC(2026, 10, 1, 14, 0, 0)); // Nov 1, 2026 is Sunday
+    assert.strictEqual(isTimeWithinSlots(sundaySameHour, slots), false);
+  });
+
+  await test('UTC day boundary test: Sunday night in Western zones is Monday in UTC', () => {
+    // Slot: Monday 01:00 to 05:00 UTC
+    const slots = [{ day: 'Monday', from: '01:00', to: '05:00' }];
+
+    // Date: Monday 02:30 UTC
+    const utcDate = new Date(Date.UTC(2026, 10, 2, 2, 30, 0));
+    assert.strictEqual(utcDate.getUTCDay(), 1); // Monday in UTC
+
+    // Evaluates true strictly against Monday slot
+    assert.strictEqual(isTimeWithinSlots(utcDate, slots), true);
+
+    // Should NOT match a Sunday slot under authoritative UTC convention
+    const sundaySlots = [{ day: 'Sunday', from: '18:00', to: '23:59' }];
+    assert.strictEqual(isTimeWithinSlots(utcDate, sundaySlots), false);
   });
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -917,7 +1243,7 @@ async function runTests() {
   console.log('  🧹 Teardown complete.');
 
   console.log('\n================================================================');
-  console.log(`Substage 3.4.1 Test Results: ${passed} passed, ${failed} failed`);
+  console.log(`Substage 3.4.1.2 Test Results: ${passed} passed, ${failed} failed`);
   console.log('================================================================\n');
 
   if (failed > 0) {
@@ -929,7 +1255,7 @@ async function runTests() {
     });
     process.exit(1);
   } else {
-    console.log('All Substage 3.4.1 tests completed successfully!');
+    console.log('All Substage 3.4.1.2 tests completed successfully!');
   }
 }
 

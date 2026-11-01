@@ -74,7 +74,15 @@ const circularLegSchema = new mongoose.Schema(
       ref: 'SwapRequest',
       default: null,
     },
+    scheduleVersion: {
+      type: Number,
+      default: 0,
+    },
     scheduleProposal: {
+      proposalId: {
+        type: String,
+        default: null,
+      },
       proposedTime: {
         type: Date,
         default: null,
@@ -106,6 +114,10 @@ const circularLegSchema = new mongoose.Schema(
     },
     scheduleHistory: [
       {
+        proposalId: {
+          type: String,
+          default: null,
+        },
         scheduledTime: {
           type: Date,
           required: true,
