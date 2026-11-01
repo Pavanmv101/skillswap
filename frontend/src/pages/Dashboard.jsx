@@ -174,11 +174,11 @@ export default function Dashboard() {
             {topPicks.map(rec => (
               <div className="card" key={rec.user._id} style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
                 <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '.6rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '.6rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '.5rem', marginBottom: '.6rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '.6rem', minWidth: 0, flex: 1 }}>
                       <Avatar name={rec.user.name} size={40} />
-                      <div>
-                        <Link to={`/user/${rec.user._id}`} className="card-name" style={{ fontSize: '1rem', fontWeight: 600 }}>
+                      <div style={{ minWidth: 0 }}>
+                        <Link to={`/user/${rec.user._id}`} className="card-name" style={{ fontSize: '1rem', fontWeight: 600, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {rec.user.name}
                         </Link>
                         <Stars value={rec.user.averageRating || 0} count={rec.user.totalRatings} />
@@ -279,7 +279,7 @@ export default function Dashboard() {
                     {t.status === 'completed' ? '✓ Mastered' : `${t.overallProgress}%`}
                   </span>
                 </div>
-                <div style={{ background: 'rgba(255,255,255,0.08)', borderRadius: 999, height: 6, overflow: 'hidden', marginBottom: '.6rem' }}>
+                <div style={{ background: 'var(--surface-subtle, #f1f5f9)', border: '1px solid var(--border, #e2e8f0)', borderRadius: 999, height: 8, overflow: 'hidden', marginBottom: '.6rem' }}>
                   <div
                     style={{
                       background: t.overallProgress === 100 ? '#10b981' : '#6366f1',

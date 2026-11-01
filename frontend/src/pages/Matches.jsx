@@ -319,17 +319,17 @@ export default function Matches() {
                 const isCalendarOpen = expandedCalendarId === m.user._id
                 return (
                   <div className="card peer-card" key={m.user._id}>
-                    <div className="peer-card-header">
+                    <div className="peer-card-header" style={{ alignItems: 'flex-start' }}>
                       <Avatar name={m.user.name} size={48} />
-                      <div style={{ flex: 1 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <Link to={`/user/${m.user._id}`} className="card-name">
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.4rem' }}>
+                          <Link to={`/user/${m.user._id}`} className="card-name" style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {m.user.name}
                           </Link>
                           {m.availabilityOverlap === true && (
                             <span
                               className="badge badge-green"
-                              style={{ cursor: 'pointer' }}
+                              style={{ cursor: 'pointer', flexShrink: 0 }}
                               onClick={() => setExpandedCalendarId(isCalendarOpen ? null : m.user._id)}
                               title="Click to view weekly schedule alignment"
                             >
@@ -387,7 +387,7 @@ export default function Matches() {
                       </div>
                     )}
 
-                    <div className="peer-card-footer" style={{ display: 'flex', gap: '.5rem' }}>
+                    <div className="peer-card-footer" style={{ display: 'flex', gap: '.5rem', marginTop: 'auto', paddingTop: '.75rem' }}>
                       <button
                         type="button"
                         className="btn btn-muted btn-sm"

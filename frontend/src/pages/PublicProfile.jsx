@@ -111,7 +111,7 @@ export default function PublicProfile() {
           </div>
         </div>
 
-        <div className="public-actions-bar">
+        <div className="public-actions-bar" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem' }}>
           {!isSelf && (
             <>
               <button
@@ -212,7 +212,7 @@ export default function PublicProfile() {
 
           <div className="card-list" style={{ marginTop: '1rem' }}>
             {endorsements.map(e => (
-              <div key={e._id} className="endorsement-card" style={{ padding: '.85rem', background: 'rgba(255,255,255,0.02)', borderRadius: 8, border: '1px solid var(--border-color)', marginBottom: '.75rem' }}>
+              <div key={e._id} className="endorsement-card" style={{ padding: '.85rem', background: 'var(--surface-subtle, #f8fafc)', borderRadius: 8, border: '1px solid var(--border, #e2e8f0)', marginBottom: '.75rem' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem' }}>
                     <Avatar name={e.endorser?.name} size={30} />

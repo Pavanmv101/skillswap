@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import api from '../api/axios'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
@@ -262,7 +262,7 @@ export default function Profile() {
                 const isVerified = s.verified || verif?.status === 'verified'
 
                 return (
-                  <div key={i} className="skill-edit-card" style={{ marginBottom: '1rem', padding: '.85rem', background: 'rgba(255,255,255,0.02)', borderRadius: 10, border: '1px solid var(--border-color)' }}>
+                  <div key={i} className="skill-edit-card" style={{ marginBottom: '1rem', padding: '.85rem', background: 'var(--surface-subtle, #f8fafc)', borderRadius: 10, border: '1px solid var(--border, #e2e8f0)' }}>
                     <div className="skill-row" style={{ marginBottom: '.5rem' }}>
                       <input
                         className="form-input"
@@ -296,7 +296,7 @@ export default function Profile() {
                     </div>
 
                     {/* Trust & Verification Badges Bar for this skill */}
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '.5rem', paddingTop: '.35rem', borderTop: '1px dashed rgba(255,255,255,0.06)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '.5rem', paddingTop: '.35rem', borderTop: '1px dashed var(--border, #e2e8f0)' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem' }}>
                         {isVerified ? (
                           <span className="badge badge-verified" title="Skill officially verified by SkillSwap administrator">
@@ -520,11 +520,11 @@ export default function Profile() {
 
           <div className="card-list">
             {myVerifications.map(v => (
-              <div key={v._id} className="verification-history-card" style={{ padding: '.9rem', background: 'rgba(255,255,255,0.02)', borderRadius: 8, border: '1px solid var(--border-color)', marginBottom: '.75rem' }}>
+              <div key={v._id} className="verification-history-card" style={{ padding: '.9rem', background: 'var(--surface-subtle, #f8fafc)', borderRadius: 8, border: '1px solid var(--border, #e2e8f0)', marginBottom: '.75rem' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '.5rem' }}>
                   <div>
-                    <strong style={{ fontSize: '1rem', color: 'var(--text-color)' }}>{v.skillName}</strong>
-                    <span style={{ marginLeft: '.5rem', fontSize: '.75rem', padding: '2px 8px', borderRadius: 4, background: 'rgba(255,255,255,0.06)' }}>
+                    <strong style={{ fontSize: '1rem', color: 'var(--text-main, #0f172a)' }}>{v.skillName}</strong>
+                    <span style={{ marginLeft: '.5rem', fontSize: '.75rem', padding: '2px 8px', borderRadius: 4, background: 'var(--surface, #ffffff)', border: '1px solid var(--border, #e2e8f0)' }}>
                       {v.category}
                     </span>
                     <span style={{ marginLeft: '.5rem', fontSize: '.75rem', color: 'var(--text-muted)' }}>
