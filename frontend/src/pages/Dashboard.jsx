@@ -6,6 +6,7 @@ import { useToast } from '../context/ToastContext'
 import Spinner from '../components/Spinner'
 import Avatar from '../components/Avatar'
 import Stars from '../components/Stars'
+import ScoreBadge from '../components/ScoreBadge'
 
 export default function Dashboard() {
   const { user } = useAuth()
@@ -15,22 +16,26 @@ export default function Dashboard() {
   const [incomingSwaps, setIncomingSwaps] = useState([])
   const [activeSwaps, setActiveSwaps]     = useState([])
   const [learningTracks, setLearningTracks] = useState([])
+  const [topPicks, setTopPicks]             = useState([])
   const [loading, setLoading] = useState(true)
 
   async function loadDashboardData() {
     try {
-      const [profileRes, swapsRes, matchRes, learningRes] = await Promise.all([
+      const [profileRes, swapsRes, matchRes, learningRes, recRes] = await Promise.all([
         api.get('/profile'),
         api.get('/swap'),
         api.get('/match'),
         api.get('/learning/dashboard').catch(() => ({ data: { learning: [], stats: {} } })),
+        api.get('/recommendations/dashboard').catch(() => ({ data: { recommendations: [] } })),
       ])
 
       const prof = profileRes.data
       const swaps = swapsRes.data || []
       const matches = matchRes.data.matches || []
       const learning = learningRes.data?.learning || []
+      const recs = recRes.data?.recommendations || []
       setLearningTracks(learning)
+      setTopPicks(recs)
 
       setProfile(prof)
 
@@ -144,7 +149,10 @@ export default function Dashboard() {
 
       {/* Quick Actions Bar */}
       <div className="quick-actions-bar">
-        <Link to="/matches" className="btn btn-primary shadow-glow">
+        <Link to="/recommendations" className="btn btn-primary shadow-glow">
+          ✨ For You Recommendations
+        </Link>
+        <Link to="/matches" className="btn btn-muted">
           ⚡ Browse Skill Matches
         </Link>
         <Link to="/swaps" className="btn btn-muted">
@@ -154,6 +162,61 @@ export default function Dashboard() {
           ⚙️ Update Availability & Skills
         </Link>
       </div>
+
+      {/* Top Picks For You (Phase 5) */}
+      {topPicks.length > 0 && (
+        <div style={{ marginTop: '2.5rem' }}>
+          <div className="section-title-row">
+            <h3>✨ Top Picks For You ({topPicks.length})</h3>
+            <Link to="/recommendations" className="link-subtle">View all recommendations →</Link>
+          </div>
+          <div className="card-grid" style={{ marginTop: '.75rem' }}>
+            {topPicks.map(rec => (
+              <div className="card" key={rec.user._id} style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '.6rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '.6rem' }}>
+                      <Avatar name={rec.user.name} size={40} />
+                      <div>
+                        <Link to={`/user/${rec.user._id}`} className="card-name" style={{ fontSize: '1rem', fontWeight: 600 }}>
+                          {rec.user.name}
+                        </Link>
+                        <Stars value={rec.user.averageRating || 0} count={rec.user.totalRatings} />
+                      </div>
+                    </div>
+                    <ScoreBadge score={rec.score} />
+                  </div>
+                  {rec.reasons?.length > 0 && (
+                    <p style={{ fontSize: '.8rem', color: 'var(--text-muted)', marginBottom: '.75rem', lineHeight: 1.4 }}>
+                      💡 {rec.reasons[0]}
+                    </p>
+                  )}
+                  <div className="tag-list" style={{ marginBottom: '.75rem' }}>
+                    {rec.matchedWants?.slice(0, 2).map((skill, i) => (
+                      <span key={i} className="tag tag-highlight" style={{ fontSize: '.72rem' }}>
+                        Teaches: {skill}
+                      </span>
+                    ))}
+                    {rec.matchedOffers?.slice(0, 1).map((skill, i) => (
+                      <span key={i} className="tag tag-wanted" style={{ fontSize: '.72rem' }}>
+                        Wants: {skill}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '.5rem', borderTop: '1px solid var(--border)', paddingTop: '.6rem' }}>
+                  <span style={{ fontSize: '.75rem', color: 'var(--text-muted)' }}>
+                    {rec.availabilityOverlap ? '⏰ Schedule aligned' : '⚡ High compatibility'}
+                  </span>
+                  <Link to="/recommendations" className="link-subtle" style={{ fontSize: '.8rem', fontWeight: 600 }}>
+                    Details →
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Active Sessions Strip */}
       {activeSwaps.length > 0 && (

@@ -54,4 +54,8 @@ const userSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Phase 5: indexes for recommendation candidate queries (additive – never duplicate existing)
+userSchema.index({ 'skillsOffered.skill': 1 });
+userSchema.index({ 'skillsWanted.skill': 1 });
+
 module.exports = mongoose.model('User', userSchema);

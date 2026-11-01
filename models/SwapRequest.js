@@ -35,5 +35,7 @@ swapRequestSchema.index({ fromUser: 1 });
 swapRequestSchema.index({ toUser: 1 });
 swapRequestSchema.index({ status: 1 });
 swapRequestSchema.index({ status: 1, scheduledAt: 1 });
+// Phase 5: compound index for already-connected pair lookup
+swapRequestSchema.index({ fromUser: 1, toUser: 1, status: 1 });
 
 module.exports = mongoose.model('SwapRequest', swapRequestSchema);

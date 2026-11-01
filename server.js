@@ -19,6 +19,7 @@ const adminRoutes = require('./routes/adminRoutes');
 const endorsementRoutes = require('./routes/endorsementRoutes');
 const learningRoutes = require('./routes/learningRoutes');
 const cronRoutes = require('./routes/cronRoutes');
+const recommendationRoutes = require('./routes/recommendationRoutes');
 
 // Import notification and reminder services
 const { setIO } = require('./services/notificationService');
@@ -196,6 +197,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/endorsements', endorsementRoutes);
 app.use('/api/learning', learningRoutes);
 app.use('/api/cron', cronRoutes);
+app.use('/api/recommendations', recommendationRoutes);
 
 // Centralized error handling middleware (handles CORS rejection with 403 Forbidden)
 app.use((err, req, res, next) => {
