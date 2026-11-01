@@ -30,6 +30,11 @@ const {
   rejectLegSchedule,
 } = require('../controllers/circularSchedulingController');
 
+const {
+  teacherCompleteLeg,
+  learnerConfirmLegCompletion,
+} = require('../controllers/circularCompletionController');
+
 router.post('/proposals',             protect, createCircularProposal);
 router.get('/proposals',              protect, getCircularProposals);
 router.get('/proposals/:id',          protect, getCircularProposalById);
@@ -41,5 +46,13 @@ router.get('/:id/schedule',                              protect, getCircularSch
 router.post('/:id/legs/:legIndex/schedule/propose',      protect, proposeLegSchedule);
 router.put('/:id/legs/:legIndex/schedule/confirm',       protect, confirmLegSchedule);
 router.put('/:id/legs/:legIndex/schedule/reject',        protect, rejectLegSchedule);
+
+// Phase 6 Substage 3.4.2: Learner-Confirmed Circular Leg Completion
+router.put('/:id/legs/:legIndex/complete',                 protect, teacherCompleteLeg);
+router.post('/:id/legs/:legIndex/complete',                protect, teacherCompleteLeg);
+router.put('/:id/legs/:legIndex/complete/teacher',         protect, teacherCompleteLeg);
+router.put('/:id/legs/:legIndex/complete/confirm',         protect, learnerConfirmLegCompletion);
+router.post('/:id/legs/:legIndex/complete/confirm',        protect, learnerConfirmLegCompletion);
+router.put('/:id/legs/:legIndex/complete/learner-confirm', protect, learnerConfirmLegCompletion);
 
 module.exports = router;

@@ -193,14 +193,20 @@ async function getCircularSchedule(req, res) {
         status: leg.status,
         scheduledAt: leg.scheduledAt,
         roomId: leg.roomId,
+        completedAt: leg.completedAt || null,
+        teacherCompletedAt: leg.teacherCompletedAt || null,
+        learnerConfirmedAt: leg.learnerConfirmedAt || null,
+        completionHistory: leg.completionHistory || [],
         swapRequest: leg.swapRequest,
         scheduleProposal: leg.scheduleProposal || { status: 'none' },
         scheduleHistory: leg.scheduleHistory || [],
         scheduleVersion: leg.scheduleVersion || 0,
         myRole,
-        canPropose: myRole === 'teacher' && exchange.status === 'active',
+        canPropose: myRole === 'teacher' && exchange.status === 'active' && leg.status !== 'completed' && leg.status !== 'teacher_completed',
         canConfirm: myRole === 'learner' && isPendingProposal && exchange.status === 'active',
         canReject: myRole === 'learner' && isPendingProposal && exchange.status === 'active',
+        canTeacherComplete: myRole === 'teacher' && leg.status === 'scheduled' && exchange.status === 'active',
+        canLearnerConfirmCompletion: myRole === 'learner' && leg.status === 'teacher_completed' && exchange.status === 'active',
       };
     });
 
@@ -272,6 +278,12 @@ async function proposeLegSchedule(req, res) {
       if (leg.teacher.toString() !== req.userId.toString()) {
         const err = new Error('Forbidden: Only the teacher of this leg may propose a schedule');
         err.status = 403;
+        throw err;
+      }
+
+      if (leg.status === 'completed' || leg.status === 'teacher_completed') {
+        const err = new Error(`Cannot propose schedule: leg is already ${leg.status}`);
+        err.status = 400;
         throw err;
       }
 
@@ -488,6 +500,12 @@ async function confirmLegSchedule(req, res) {
       if (leg.learner.toString() !== req.userId.toString()) {
         const err = new Error('Forbidden: Only the learner of this leg may confirm the schedule');
         err.status = 403;
+        throw err;
+      }
+
+      if (leg.status === 'completed' || leg.status === 'teacher_completed') {
+        const err = new Error(`Cannot confirm schedule: leg is already ${leg.status}`);
+        err.status = 400;
         throw err;
       }
 

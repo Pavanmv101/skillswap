@@ -54,7 +54,7 @@ const circularLegSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['pending', 'active', 'scheduled', 'completed', 'disputed', 'cancelled'],
+      enum: ['pending', 'active', 'scheduled', 'teacher_completed', 'completed', 'disputed', 'cancelled'],
       default: 'pending',
     },
     scheduledAt: {
@@ -65,10 +65,52 @@ const circularLegSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    teacherCompletedAt: {
+      type: Date,
+      default: null,
+    },
+    teacherCompletedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
+    learnerConfirmedAt: {
+      type: Date,
+      default: null,
+    },
+    learnerConfirmedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
     completedAt: {
       type: Date,
       default: null,
     },
+    completionHistory: [
+      {
+        status: {
+          type: String,
+          enum: ['teacher_completed', 'completed'],
+          required: true,
+        },
+        actionBy: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'User',
+          required: true,
+        },
+        actionAt: {
+          type: Date,
+          default: Date.now,
+        },
+        notes: {
+          type: String,
+          default: '',
+          maxlength: 500,
+          trim: true,
+        },
+      },
+    ],
     swapRequest: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'SwapRequest',
