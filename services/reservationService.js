@@ -49,8 +49,8 @@ function isTransactionSupported() {
 /**
  * Executes a callback within a MongoDB transaction if the connected cluster supports transactions.
  * In production, multi-document transactions are mandatory; unsupported topology fails fast immediately.
- * In development and test environments, falls back to standalone execution (session = null)
- * using atomic database-level unique constraints for concurrency control.
+ * In development and test environments, falls back to standalone execution while propagating an active
+ * ClientSession so session-contract queries and writes execute correctly.
  *
  * @param {Function} callback - async (session) => result
  * @returns {Promise<any>}
@@ -65,9 +65,16 @@ async function withTransaction(callback) {
       );
     }
     // Standalone fallback: permitted for development and testing environments only.
+    // Propagates an active ClientSession so session contracts in queries and writes are strictly satisfied.
     // Note: Non-transactional fallback relies on database unique indexes and compensating deletes,
     // which do NOT provide ACID multi-document atomicity in the event of abnormal process termination.
-    return await callback(null);
+    const session = await mongoose.startSession();
+    try {
+      const result = await callback(session);
+      return result;
+    } finally {
+      await session.endSession();
+    }
   }
 
   const session = await mongoose.startSession();
@@ -89,30 +96,66 @@ async function withTransaction(callback) {
 }
 
 /**
+ * Validates that a provided session is a valid, active MongoDB ClientSession.
+ *
+ * @param {any} session
+ * @throws {Error} If session is missing, ended, or invalid
+ */
+function validateTransactionSession(session) {
+  if (!session) {
+    throw new Error('A valid active MongoDB transaction session is required');
+  }
+
+  const isClientSession =
+    session instanceof mongoose.mongo.ClientSession ||
+    (typeof session === 'object' && typeof session.hasEnded === 'boolean' && typeof session.endSession === 'function');
+
+  if (!isClientSession) {
+    throw new Error('A valid active MongoDB transaction session is required; provided value is not a ClientSession');
+  }
+
+  if (session.hasEnded) {
+    throw new Error('A valid active MongoDB transaction session is required; session has already ended');
+  }
+}
+
+/**
  * Asserts that none of the specified participants are currently engaged in an active accepted SwapRequest.
  * Enforces mutual exclusion across legacy bilateral exchanges that were accepted prior to the
  * introduction of the ExchangeReservation system.
  *
  * Requirements:
+ * - Requires a valid active MongoDB transaction session (rejects missing, ended, or invalid sessions).
+ * - Always attaches the required session to the SwapRequest query.
+ * - Rejects invalid or empty participant input.
  * - Checks both fromUser and toUser directions.
  * - Filters strictly to status 'accepted'.
  * - Excludes the current pending SwapRequest ID when provided.
- * - Propagates caller's session to query.
  * - Throws ReservationConflictError (HTTP 409) if any participant has an active accepted swap.
  *
  * @param {Object} params
  * @param {Array<mongoose.Types.ObjectId|string>} params.participantIds - Participant user IDs to check
  * @param {mongoose.Types.ObjectId|string} [params.excludeSwapId] - Current swap ID to exclude from conflict check
- * @param {mongoose.ClientSession|null} [params.session] - Transaction session to attach to query
+ * @param {mongoose.ClientSession} params.session - Mandatory active transaction session
  * @returns {Promise<{ hasConflict: boolean, conflictingSwaps: Array }>}
  * @throws {ReservationConflictError} HTTP 409 if any participant has an active accepted swap
  */
-async function assertNoAcceptedSwapConflicts({ participantIds = [], excludeSwapId = null, session = null } = {}) {
+async function assertNoAcceptedSwapConflicts({ participantIds = [], excludeSwapId = null, session = undefined } = {}) {
+  // 1. Session contract validation
+  validateTransactionSession(session);
+
+  // 2. Participant input validation
   if (!Array.isArray(participantIds) || participantIds.length === 0) {
-    return { hasConflict: false, conflictingSwaps: [] };
+    throw new Error('participantIds must be a non-empty array of valid participant IDs');
   }
 
-  const validIds = participantIds.map(id => new mongoose.Types.ObjectId(id._id || id));
+  const validIds = participantIds.map(id => {
+    const rawId = id && (id._id || id);
+    if (!rawId || !mongoose.Types.ObjectId.isValid(rawId)) {
+      throw new Error(`Invalid participant ID provided: ${rawId}`);
+    }
+    return new mongoose.Types.ObjectId(rawId);
+  });
 
   const filter = {
     $or: [
@@ -122,13 +165,15 @@ async function assertNoAcceptedSwapConflicts({ participantIds = [], excludeSwapI
   };
 
   if (excludeSwapId) {
-    filter._id = { $ne: new mongoose.Types.ObjectId(excludeSwapId._id || excludeSwapId) };
+    const rawExclude = excludeSwapId._id || excludeSwapId;
+    if (!mongoose.Types.ObjectId.isValid(rawExclude)) {
+      throw new Error(`Invalid excludeSwapId provided: ${rawExclude}`);
+    }
+    filter._id = { $ne: new mongoose.Types.ObjectId(rawExclude) };
   }
 
-  const query = SwapRequest.find(filter);
-  if (session) {
-    query.session(session);
-  }
+  // 3. Always attach required session to the SwapRequest query
+  const query = SwapRequest.find(filter).session(session);
 
   const conflictingSwaps = await query.lean();
 

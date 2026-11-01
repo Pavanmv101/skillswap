@@ -723,14 +723,17 @@ async function runTests() {
 
       const pendingSwap = await createTestSwap(uA, uB, { status: 'pending' });
 
-      // assertNoAcceptedSwapConflicts excluding current swap should pass cleanly
-      const conflictCheck = await assertNoAcceptedSwapConflicts({
-        participantIds: [uA._id, uB._id],
-        excludeSwapId: pendingSwap._id,
-      });
+      await withTransaction(async (session) => {
+        // assertNoAcceptedSwapConflicts excluding current swap should pass cleanly
+        const conflictCheck = await assertNoAcceptedSwapConflicts({
+          participantIds: [uA._id, uB._id],
+          excludeSwapId: pendingSwap._id,
+          session,
+        });
 
-      assert.strictEqual(conflictCheck.hasConflict, false);
-      assert.strictEqual(conflictCheck.conflictingSwaps.length, 0);
+        assert.strictEqual(conflictCheck.hasConflict, false);
+        assert.strictEqual(conflictCheck.conflictingSwaps.length, 0);
+      });
     });
 
     await test('6. Production withTransaction() fails fast when transaction support is unavailable', async () => {
@@ -764,12 +767,9 @@ async function runTests() {
         let callbackExecuted = false;
         await withTransaction(async (session) => {
           callbackExecuted = true;
-          // In standalone dev/test, session is null; in replica set, session is active ClientSession
-          if (!isTransactionSupported()) {
-            assert.strictEqual(session, null);
-          } else {
-            assert(session !== null);
-          }
+          // An active ClientSession is always passed to satisfy session contracts
+          assert(session !== null);
+          assert.strictEqual(session.hasEnded, false);
         });
         assert.strictEqual(callbackExecuted, true);
       } finally {
@@ -822,6 +822,66 @@ async function runTests() {
 
       assert.strictEqual(res2.statusCode, 409);
       assert.strictEqual(res2.body.message, 'One or more participants currently have an active exchange in progress');
+    });
+
+    await test('10. assertNoAcceptedSwapConflicts rejects missing session', async () => {
+      const u1 = new mongoose.Types.ObjectId();
+      await assert.rejects(
+        async () => {
+          await assertNoAcceptedSwapConflicts({ participantIds: [u1] });
+        },
+        /A valid active MongoDB transaction session is required/
+      );
+    });
+
+    await test('11. assertNoAcceptedSwapConflicts rejects invalid or ended session', async () => {
+      const u1 = new mongoose.Types.ObjectId();
+
+      // Non-session object
+      await assert.rejects(
+        async () => {
+          await assertNoAcceptedSwapConflicts({ participantIds: [u1], session: { invalid: true } });
+        },
+        /A valid active MongoDB transaction session is required/
+      );
+
+      // Ended session
+      const tempSession = await mongoose.startSession();
+      await tempSession.endSession();
+      await assert.rejects(
+        async () => {
+          await assertNoAcceptedSwapConflicts({ participantIds: [u1], session: tempSession });
+        },
+        /session has already ended/
+      );
+    });
+
+    await test('12. assertNoAcceptedSwapConflicts rejects empty or invalid participant inputs', async () => {
+      await withTransaction(async (session) => {
+        // Empty array
+        await assert.rejects(
+          async () => {
+            await assertNoAcceptedSwapConflicts({ participantIds: [], session });
+          },
+          /participantIds must be a non-empty array/
+        );
+
+        // Non-array
+        await assert.rejects(
+          async () => {
+            await assertNoAcceptedSwapConflicts({ participantIds: null, session });
+          },
+          /participantIds must be a non-empty array/
+        );
+
+        // Invalid ObjectId string
+        await assert.rejects(
+          async () => {
+            await assertNoAcceptedSwapConflicts({ participantIds: ['not-an-id'], session });
+          },
+          /Invalid participant ID provided/
+        );
+      });
     });
 
   } finally {
