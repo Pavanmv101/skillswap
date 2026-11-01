@@ -8,6 +8,7 @@
 
 const assert = require('assert');
 const mongoose = require('mongoose');
+const { connectTestDb, disconnectTestDb, assertTestDatabaseSafe } = require('./test_db_guard');
 require('dotenv').config();
 
 const { isAllowedOrigin } = require('./server');
@@ -104,7 +105,8 @@ async function runTests() {
   // ── TEST GROUP 2: Multi-Instance Cron Idempotency & Database Index ──────────
   console.log('\n--- GROUP 2: Clustered Cron Idempotency & Database Uniqueness ---');
 
-  await mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/skillswap');
+  await connectTestDb();
+  assertTestDatabaseSafe();
 
   // Verify unique index exists on Notification collection
   const notifCollection = mongoose.connection.collection('notifications');
@@ -248,7 +250,8 @@ async function runTests() {
     await mongoose.connection.close(false);
     assert.strictEqual(mongoose.connection.readyState, 0, 'MongoDB connection must be cleanly closed (readyState = 0)');
     // Reconnect for remaining test assertions if needed
-    await mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/skillswap');
+    await connectTestDb();
+  assertTestDatabaseSafe();
   });
 
   await testAsync('Graceful Shutdown: Full process SIGTERM signal triggers clean exit with code 0', async () => {
@@ -278,7 +281,7 @@ async function runTests() {
   console.log(`📊 PRODUCTION IMPROVEMENTS RESULTS: ${passed} PASSED | ${failed} FAILED`);
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
-  await mongoose.disconnect();
+  await disconnectTestDb();
   process.exit(failed > 0 ? 1 : 0);
 }
 

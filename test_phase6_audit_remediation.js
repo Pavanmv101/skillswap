@@ -10,6 +10,7 @@
 
 'use strict';
 
+const { connectTestDb, disconnectTestDb, assertTestDatabaseSafe } = require('./test_db_guard');
 require('dotenv').config();
 const assert = require('assert');
 const mongoose = require('mongoose');
@@ -224,10 +225,8 @@ async function runTests() {
   console.log(' Phase 6 Integration Audit Remediation Test Suite (F-01 & F-02)');
   console.log('================================================================\n');
 
-  const mongoUri = process.env.MONGO_URI || 'mongodb://localhost:27017/skillswap';
-  if (mongoose.connection.readyState === 0) {
-    await mongoose.connect(mongoUri);
-  }
+  await connectTestDb();
+  assertTestDatabaseSafe();
 
   await CircularExchange.syncIndexes();
   await ExchangeReservation.syncIndexes();
@@ -678,12 +677,13 @@ async function runTests() {
   // CLEANUP
   // ─────────────────────────────────────────────────────────────────────────────
   console.log('\n--- Teardown Test Data ---');
+  assertTestDatabaseSafe();
   await CircularExchange.deleteMany({ initiator: { $exists: true } });
   await SwapRequest.deleteMany({});
   await ExchangeReservation.deleteMany({});
   await OutboxEvent.deleteMany({});
   await User.deleteMany({ email: /@test\.com$/ });
-  await mongoose.disconnect();
+  await disconnectTestDb();
   console.log('  🧹 Teardown complete.');
 
   console.log('\n================================================================');

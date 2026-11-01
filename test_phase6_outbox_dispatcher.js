@@ -18,6 +18,7 @@
 
 'use strict';
 
+const { connectTestDb, disconnectTestDb, assertTestDatabaseSafe } = require('./test_db_guard');
 const assert = require('assert');
 const mongoose = require('mongoose');
 require('dotenv').config();
@@ -67,12 +68,12 @@ async function runTests() {
     }
   }
 
-  // Connect to test database
-  const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/skillswap';
-  await mongoose.connect(mongoUri);
+  // Connect to test database safely
+  await connectTestDb();
+  assertTestDatabaseSafe();
 
-  // Clean test artifacts
-  await OutboxEvent.deleteMany({ aggregateType: 'test_phase6_outbox' });
+  // Clean test artifacts and any leftover pending events in test database
+  await OutboxEvent.deleteMany({});
   await Notification.deleteMany({ title: /^\[TEST_PHASE6\]/ });
 
   // Seed test users
@@ -827,11 +828,12 @@ async function runTests() {
 
   } finally {
     // Cleanup
+    assertTestDatabaseSafe();
     await OutboxEvent.deleteMany({ aggregateType: 'test_phase6_outbox' });
     await Notification.deleteMany({ title: /^\[TEST_PHASE6\]/ });
-    await SwapRequest.deleteOne({ _id: testSwap._id });
-    await User.deleteMany({ _id: { $in: [userA._id, userB._id] } });
-    await mongoose.disconnect();
+    if (testSwap) await SwapRequest.deleteOne({ _id: testSwap._id });
+    if (userA && userB) await User.deleteMany({ _id: { $in: [userA._id, userB._id] } });
+    await disconnectTestDb();
   }
 
   console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');

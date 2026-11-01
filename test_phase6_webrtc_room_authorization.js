@@ -23,6 +23,7 @@
 
 'use strict';
 
+const { connectTestDb, disconnectTestDb, assertTestDatabaseSafe } = require('./test_db_guard');
 require('dotenv').config();
 const assert = require('assert');
 const jwt = require('jsonwebtoken');
@@ -70,6 +71,9 @@ async function runSecuritySuite() {
   console.log('\n===============================================================');
   console.log('🔒 Starting WebRTC Room Authorization Security Test Suite');
   console.log('===============================================================\n');
+
+  await connectTestDb();
+  assertTestDatabaseSafe();
 
   // Start HTTP server on test port if not already listening
   await new Promise((resolve) => {
@@ -320,11 +324,12 @@ async function runSecuritySuite() {
     console.log('===============================================================\n');
   } finally {
     // Cleanup database records
+    assertTestDatabaseSafe();
     await SwapRequest.deleteMany({ _id: { $in: createdSwapIds } });
     await CircularExchange.deleteMany({ _id: { $in: createdExchangeIds } });
     await User.deleteMany({ _id: { $in: createdUserIds } });
     await new Promise(resolve => server.close(resolve));
-    await mongoose.disconnect();
+    await disconnectTestDb();
   }
 }
 
