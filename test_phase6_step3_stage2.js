@@ -372,75 +372,153 @@ async function runTests() {
     console.log('\n--- 3. Mutual Blocking Checks (All 3 Pairs) ---');
 
     await test('Blocking Pair 1: User A blocks User B -> Cycle excluded', async () => {
+      const uTag = Date.now().toString(36) + '_p1';
       const userB = await createTestUser({
         name: 'BlockedB_1',
-        skillsOffered: [{ skill: 'BlockSkill2', level: 'Intermediate' }],
-        skillsWanted: [{ skill: 'BlockSkill1', level: 'Intermediate' }],
+        skillsOffered: [{ skill: `BlockSkill2_${uTag}`, level: 'Intermediate' }],
+        skillsWanted: [{ skill: `BlockSkill1_${uTag}`, level: 'Intermediate' }],
       });
 
       const userA = await createTestUser({
         name: 'BlockerA_1',
-        skillsOffered: [{ skill: 'BlockSkill1', level: 'Intermediate' }],
-        skillsWanted: [{ skill: 'BlockSkill3', level: 'Intermediate' }],
+        skillsOffered: [{ skill: `BlockSkill1_${uTag}`, level: 'Intermediate' }],
+        skillsWanted: [{ skill: `BlockSkill3_${uTag}`, level: 'Intermediate' }],
         blockedUsers: [userB._id],
       });
 
       const userC = await createTestUser({
         name: 'UserC_1',
-        skillsOffered: [{ skill: 'BlockSkill3', level: 'Intermediate' }],
-        skillsWanted: [{ skill: 'BlockSkill2', level: 'Intermediate' }],
+        skillsOffered: [{ skill: `BlockSkill3_${uTag}`, level: 'Intermediate' }],
+        skillsWanted: [{ skill: `BlockSkill2_${uTag}`, level: 'Intermediate' }],
       });
 
       const res = await findCircularCycles(userA);
       assert.strictEqual(res.cycles.length, 0, 'Cycle with blocked B must be excluded');
     });
 
+    await test('Blocking Pair 1 Reverse: User B blocks User A -> Cycle excluded', async () => {
+      const uTag = Date.now().toString(36) + '_p1r';
+      const userA = await createTestUser({
+        name: 'TargetA_1r',
+        skillsOffered: [{ skill: `BlockSkill1_${uTag}`, level: 'Intermediate' }],
+        skillsWanted: [{ skill: `BlockSkill3_${uTag}`, level: 'Intermediate' }],
+      });
+
+      const userB = await createTestUser({
+        name: 'BlockerB_1r',
+        skillsOffered: [{ skill: `BlockSkill2_${uTag}`, level: 'Intermediate' }],
+        skillsWanted: [{ skill: `BlockSkill1_${uTag}`, level: 'Intermediate' }],
+        blockedUsers: [userA._id],
+      });
+
+      const userC = await createTestUser({
+        name: 'UserC_1r',
+        skillsOffered: [{ skill: `BlockSkill3_${uTag}`, level: 'Intermediate' }],
+        skillsWanted: [{ skill: `BlockSkill2_${uTag}`, level: 'Intermediate' }],
+      });
+
+      const res = await findCircularCycles(userA);
+      assert.strictEqual(res.cycles.length, 0, 'Cycle where B blocks A must be excluded');
+    });
+
     await test('Blocking Pair 2: User B blocks User C -> Cycle excluded', async () => {
+      const uTag = Date.now().toString(36) + '_p2';
       const userC = await createTestUser({
         name: 'BlockedC_2',
-        skillsOffered: [{ skill: 'BlockSkillF', level: 'Intermediate' }],
-        skillsWanted: [{ skill: 'BlockSkillE', level: 'Intermediate' }],
+        skillsOffered: [{ skill: `BlockSkillF_${uTag}`, level: 'Intermediate' }],
+        skillsWanted: [{ skill: `BlockSkillE_${uTag}`, level: 'Intermediate' }],
       });
 
       const userB = await createTestUser({
         name: 'BlockerB_2',
-        skillsOffered: [{ skill: 'BlockSkillE', level: 'Intermediate' }],
-        skillsWanted: [{ skill: 'BlockSkillD', level: 'Intermediate' }],
+        skillsOffered: [{ skill: `BlockSkillE_${uTag}`, level: 'Intermediate' }],
+        skillsWanted: [{ skill: `BlockSkillD_${uTag}`, level: 'Intermediate' }],
         blockedUsers: [userC._id],
       });
 
       const userA = await createTestUser({
         name: 'UserA_2',
-        skillsOffered: [{ skill: 'BlockSkillD', level: 'Intermediate' }],
-        skillsWanted: [{ skill: 'BlockSkillF', level: 'Intermediate' }],
+        skillsOffered: [{ skill: `BlockSkillD_${uTag}`, level: 'Intermediate' }],
+        skillsWanted: [{ skill: `BlockSkillF_${uTag}`, level: 'Intermediate' }],
       });
 
       const res = await findCircularCycles(userA);
       assert.strictEqual(res.cycles.length, 0, 'Cycle where B blocks C must be excluded');
     });
 
+    await test('Blocking Pair 2 Reverse: User C blocks User B -> Cycle excluded', async () => {
+      const uTag = Date.now().toString(36) + '_p2r';
+      const userB = await createTestUser({
+        name: 'TargetB_2r',
+        skillsOffered: [{ skill: `BlockSkillE_${uTag}`, level: 'Intermediate' }],
+        skillsWanted: [{ skill: `BlockSkillD_${uTag}`, level: 'Intermediate' }],
+      });
+
+      const userC = await createTestUser({
+        name: 'BlockerC_2r',
+        skillsOffered: [{ skill: `BlockSkillF_${uTag}`, level: 'Intermediate' }],
+        skillsWanted: [{ skill: `BlockSkillE_${uTag}`, level: 'Intermediate' }],
+        blockedUsers: [userB._id],
+      });
+
+      const userA = await createTestUser({
+        name: 'UserA_2r',
+        skillsOffered: [{ skill: `BlockSkillD_${uTag}`, level: 'Intermediate' }],
+        skillsWanted: [{ skill: `BlockSkillF_${uTag}`, level: 'Intermediate' }],
+      });
+
+      const res = await findCircularCycles(userA);
+      assert.strictEqual(res.cycles.length, 0, 'Cycle where C blocks B must be excluded');
+    });
+
     await test('Blocking Pair 3: User C blocks User A -> Cycle excluded', async () => {
+      const uTag = Date.now().toString(36) + '_p3';
       const userA = await createTestUser({
         name: 'TargetA_3',
-        skillsOffered: [{ skill: 'BlockSkillX', level: 'Intermediate' }],
-        skillsWanted: [{ skill: 'BlockSkillZ', level: 'Intermediate' }],
+        skillsOffered: [{ skill: `BlockSkillX_${uTag}`, level: 'Intermediate' }],
+        skillsWanted: [{ skill: `BlockSkillZ_${uTag}`, level: 'Intermediate' }],
       });
 
       const userB = await createTestUser({
         name: 'UserB_3',
-        skillsOffered: [{ skill: 'BlockSkillY', level: 'Intermediate' }],
-        skillsWanted: [{ skill: 'BlockSkillX', level: 'Intermediate' }],
+        skillsOffered: [{ skill: `BlockSkillY_${uTag}`, level: 'Intermediate' }],
+        skillsWanted: [{ skill: `BlockSkillX_${uTag}`, level: 'Intermediate' }],
       });
 
       const userC = await createTestUser({
         name: 'BlockerC_3',
-        skillsOffered: [{ skill: 'BlockSkillZ', level: 'Intermediate' }],
-        skillsWanted: [{ skill: 'BlockSkillY', level: 'Intermediate' }],
+        skillsOffered: [{ skill: `BlockSkillZ_${uTag}`, level: 'Intermediate' }],
+        skillsWanted: [{ skill: `BlockSkillY_${uTag}`, level: 'Intermediate' }],
         blockedUsers: [userA._id],
       });
 
       const res = await findCircularCycles(userA);
       assert.strictEqual(res.cycles.length, 0, 'Cycle where C blocks A must be excluded');
+    });
+
+    await test('Blocking Pair 3 Reverse: User A blocks User C -> Cycle excluded', async () => {
+      const uTag = Date.now().toString(36) + '_p3r';
+      const userC = await createTestUser({
+        name: 'TargetC_3r',
+        skillsOffered: [{ skill: `BlockSkillZ_${uTag}`, level: 'Intermediate' }],
+        skillsWanted: [{ skill: `BlockSkillY_${uTag}`, level: 'Intermediate' }],
+      });
+
+      const userA = await createTestUser({
+        name: 'BlockerA_3r',
+        skillsOffered: [{ skill: `BlockSkillX_${uTag}`, level: 'Intermediate' }],
+        skillsWanted: [{ skill: `BlockSkillZ_${uTag}`, level: 'Intermediate' }],
+        blockedUsers: [userC._id],
+      });
+
+      const userB = await createTestUser({
+        name: 'UserB_3r',
+        skillsOffered: [{ skill: `BlockSkillY_${uTag}`, level: 'Intermediate' }],
+        skillsWanted: [{ skill: `BlockSkillX_${uTag}`, level: 'Intermediate' }],
+      });
+
+      const res = await findCircularCycles(userA);
+      assert.strictEqual(res.cycles.length, 0, 'Cycle where A blocks C must be excluded');
     });
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -449,28 +527,29 @@ async function runTests() {
     console.log('\n--- 4. Conflict Exclusion (Active Swaps & Proposals) ---');
 
     await test('Active bilateral swap exclusion: Participant B with accepted bilateral swap excluded', async () => {
+      const uTag = Date.now().toString(36) + '_bb';
       const uA = await createTestUser({
         name: 'UserA_BilateralBusy',
-        skillsOffered: [{ skill: 'SwapSkill1', level: 'Advanced' }],
-        skillsWanted: [{ skill: 'SwapSkill3', level: 'Intermediate' }],
+        skillsOffered: [{ skill: `SwapSkill1_${uTag}`, level: 'Advanced' }],
+        skillsWanted: [{ skill: `SwapSkill3_${uTag}`, level: 'Intermediate' }],
       });
       const uB = await createTestUser({
         name: 'UserB_BilateralBusy',
-        skillsOffered: [{ skill: 'SwapSkill2', level: 'Advanced' }],
-        skillsWanted: [{ skill: 'SwapSkill1', level: 'Intermediate' }],
+        skillsOffered: [{ skill: `SwapSkill2_${uTag}`, level: 'Advanced' }],
+        skillsWanted: [{ skill: `SwapSkill1_${uTag}`, level: 'Intermediate' }],
       });
       const uC = await createTestUser({
         name: 'UserC_BilateralBusy',
-        skillsOffered: [{ skill: 'SwapSkill3', level: 'Advanced' }],
-        skillsWanted: [{ skill: 'SwapSkill2', level: 'Intermediate' }],
+        skillsOffered: [{ skill: `SwapSkill3_${uTag}`, level: 'Advanced' }],
+        skillsWanted: [{ skill: `SwapSkill2_${uTag}`, level: 'Intermediate' }],
       });
-      const uPartner = await createTestUser({ name: 'UnrelatedPartner' });
+      const uPartner = await createTestUser({ name: 'UnrelatedPartner_B' });
 
       // Create an active accepted bilateral swap involving User B
       const activeSwap = await SwapRequest.create({
         fromUser: uB._id,
         toUser: uPartner._id,
-        offeredSkill: 'SwapSkill2',
+        offeredSkill: `SwapSkill2_${uTag}`,
         wantedSkill: 'SomethingElse',
         status: 'accepted',
       });
@@ -478,6 +557,82 @@ async function runTests() {
 
       const res = await findCircularCycles(uA);
       assert.strictEqual(res.cycles.length, 0, 'User B with accepted bilateral swap must exclude the cycle');
+
+      // Update swap to completed
+      await SwapRequest.findByIdAndUpdate(activeSwap._id, { status: 'completed' });
+      const resAfterComplete = await findCircularCycles(uA);
+      assert(resAfterComplete.cycles.length >= 1, 'Completed swap no longer blocks cycle discovery');
+    });
+
+    await test('Active bilateral swap exclusion: Participant A with accepted bilateral swap excluded', async () => {
+      const uTag = Date.now().toString(36) + '_ba';
+      const uA = await createTestUser({
+        name: 'UserA_BilateralBusy_A',
+        skillsOffered: [{ skill: `SwapSkill1_${uTag}`, level: 'Advanced' }],
+        skillsWanted: [{ skill: `SwapSkill3_${uTag}`, level: 'Intermediate' }],
+      });
+      const uB = await createTestUser({
+        name: 'UserB_BilateralBusy_A',
+        skillsOffered: [{ skill: `SwapSkill2_${uTag}`, level: 'Advanced' }],
+        skillsWanted: [{ skill: `SwapSkill1_${uTag}`, level: 'Intermediate' }],
+      });
+      const uC = await createTestUser({
+        name: 'UserC_BilateralBusy_A',
+        skillsOffered: [{ skill: `SwapSkill3_${uTag}`, level: 'Advanced' }],
+        skillsWanted: [{ skill: `SwapSkill2_${uTag}`, level: 'Intermediate' }],
+      });
+      const uPartner = await createTestUser({ name: 'UnrelatedPartner_A' });
+
+      // Create an active accepted bilateral swap where User A is the toUser
+      const activeSwap = await SwapRequest.create({
+        fromUser: uPartner._id,
+        toUser: uA._id,
+        offeredSkill: 'PartnerOffer',
+        wantedSkill: `SwapSkill1_${uTag}`,
+        status: 'accepted',
+      });
+      createdSwapIds.push(activeSwap._id);
+
+      const res = await findCircularCycles(uA);
+      assert.strictEqual(res.cycles.length, 0, 'User A with accepted bilateral swap must exclude the cycle');
+
+      // Update swap to cancelled
+      await SwapRequest.findByIdAndUpdate(activeSwap._id, { status: 'cancelled' });
+      const resAfterCancel = await findCircularCycles(uA);
+      assert(resAfterCancel.cycles.length >= 1, 'Cancelled swap no longer blocks cycle discovery');
+    });
+
+    await test('Active bilateral swap exclusion: Participant C with accepted bilateral swap excluded', async () => {
+      const uTag = Date.now().toString(36) + '_bc';
+      const uA = await createTestUser({
+        name: 'UserA_BilateralBusy_C',
+        skillsOffered: [{ skill: `SwapSkill1_${uTag}`, level: 'Advanced' }],
+        skillsWanted: [{ skill: `SwapSkill3_${uTag}`, level: 'Intermediate' }],
+      });
+      const uB = await createTestUser({
+        name: 'UserB_BilateralBusy_C',
+        skillsOffered: [{ skill: `SwapSkill2_${uTag}`, level: 'Advanced' }],
+        skillsWanted: [{ skill: `SwapSkill1_${uTag}`, level: 'Intermediate' }],
+      });
+      const uC = await createTestUser({
+        name: 'UserC_BilateralBusy_C',
+        skillsOffered: [{ skill: `SwapSkill3_${uTag}`, level: 'Advanced' }],
+        skillsWanted: [{ skill: `SwapSkill2_${uTag}`, level: 'Intermediate' }],
+      });
+      const uPartner = await createTestUser({ name: 'UnrelatedPartner_C' });
+
+      // Create an active accepted bilateral swap involving User C
+      const activeSwap = await SwapRequest.create({
+        fromUser: uC._id,
+        toUser: uPartner._id,
+        offeredSkill: `SwapSkill3_${uTag}`,
+        wantedSkill: 'PartnerSkill',
+        status: 'accepted',
+      });
+      createdSwapIds.push(activeSwap._id);
+
+      const res = await findCircularCycles(uA);
+      assert.strictEqual(res.cycles.length, 0, 'User C with accepted bilateral swap must exclude the cycle');
 
       // Update swap to completed
       await SwapRequest.findByIdAndUpdate(activeSwap._id, { status: 'completed' });
