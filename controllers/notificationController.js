@@ -1,36 +1,136 @@
 const mongoose = require('mongoose');
 const Notification = require('../models/Notification');
 
+const MAX_RECONCILE_IDS = 100;
+
+function parseReconcileIds(queryReconcileIds) {
+  let raw = [];
+  if (queryReconcileIds) {
+    if (Array.isArray(queryReconcileIds)) {
+      raw = queryReconcileIds;
+    } else if (typeof queryReconcileIds === 'string') {
+      raw = queryReconcileIds.split(',').map((s) => s.trim()).filter(Boolean);
+    }
+  }
+  if (raw.length > MAX_RECONCILE_IDS) {
+    raw = raw.slice(0, MAX_RECONCILE_IDS);
+  }
+  return raw
+    .filter((id) => mongoose.Types.ObjectId.isValid(id))
+    .map((id) => new mongoose.Types.ObjectId(id));
+}
+
 // GET /api/notifications
-// Supports query params: ?page=1&limit=20&unreadOnly=false
+// Supports query params: ?page=1&limit=20&unreadOnly=false&reconcileIds=id1,id2
 exports.getNotifications = async (req, res) => {
   try {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
     const skip = (page - 1) * limit;
 
-    const query = { recipient: req.userId };
+    const recipientObjectId = new mongoose.Types.ObjectId(req.userId);
+    const baseMatch = { recipient: recipientObjectId };
     if (req.query.unreadOnly === 'true') {
-      query.isRead = false;
+      baseMatch.isRead = false;
     }
 
-    const [notifications, total, unreadCount] = await Promise.all([
-      Notification.find(query)
-        .populate('sender', 'name email')
-        .populate('relatedSwap', 'offeredSkill wantedSkill status roomId scheduledAt')
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit),
-      Notification.countDocuments(query),
-      Notification.countDocuments({ recipient: req.userId, isRead: false }),
+    const validReconcileObjectIds = parseReconcileIds(req.query.reconcileIds);
+    const snapshotTimestamp = new Date().toISOString();
+
+    const [result] = await Notification.aggregate([
+      { $match: baseMatch },
+      { $sort: { createdAt: -1, _id: -1 } },
+      {
+        $facet: {
+          notifications: [
+            { $skip: skip },
+            { $limit: limit },
+            {
+              $lookup: {
+                from: 'users',
+                localField: 'sender',
+                foreignField: '_id',
+                pipeline: [{ $project: { name: 1, email: 1 } }],
+                as: 'sender',
+              },
+            },
+            {
+              $unwind: {
+                path: '$sender',
+                preserveNullAndEmptyArrays: true,
+              },
+            },
+            {
+              $lookup: {
+                from: 'swaprequests',
+                localField: 'relatedSwap',
+                foreignField: '_id',
+                pipeline: [
+                  {
+                    $project: {
+                      offeredSkill: 1,
+                      wantedSkill: 1,
+                      status: 1,
+                      roomId: 1,
+                      scheduledAt: 1,
+                    },
+                  },
+                ],
+                as: 'relatedSwap',
+              },
+            },
+            {
+              $unwind: {
+                path: '$relatedSwap',
+                preserveNullAndEmptyArrays: true,
+              },
+            },
+          ],
+          total: [{ $count: 'count' }],
+          unreadSummary: [
+            { $match: { isRead: false } },
+            { $count: 'count' },
+          ],
+          reconciledNotificationIds: [
+            {
+              $match: {
+                _id: { $in: validReconcileObjectIds },
+              },
+            },
+            { $project: { _id: 1 } },
+          ],
+          reconciledUnread: [
+            {
+              $match: {
+                _id: { $in: validReconcileObjectIds },
+                isRead: false,
+              },
+            },
+            { $project: { _id: 1 } },
+          ],
+        },
+      },
     ]);
+
+    const notifications = result?.notifications || [];
+    const total = result?.total?.[0]?.count || 0;
+    const unreadCount = result?.unreadSummary?.[0]?.count || 0;
+    const reconciledNotificationIds = (result?.reconciledNotificationIds || []).map((d) =>
+      d._id.toString()
+    );
+    const reconciledUnreadIds = (result?.reconciledUnread || []).map((d) =>
+      d._id.toString()
+    );
 
     res.status(200).json({
       notifications,
       unreadCount,
+      reconciledNotificationIds,
+      reconciledUnreadIds,
       total,
       page,
       totalPages: Math.ceil(total / limit) || 1,
+      snapshotAt: snapshotTimestamp,
     });
   } catch (err) {
     res.status(500).json({ message: 'Server error', error: err.message });
@@ -38,14 +138,54 @@ exports.getNotifications = async (req, res) => {
 };
 
 // GET /api/notifications/unread-count
+// Supports query params: ?reconcileIds=id1,id2
 exports.getUnreadCount = async (req, res) => {
   try {
-    const unreadCount = await Notification.countDocuments({
-      recipient: req.userId,
-      isRead: false,
-    });
+    const recipientObjectId = new mongoose.Types.ObjectId(req.userId);
+    const validReconcileObjectIds = parseReconcileIds(req.query.reconcileIds);
 
-    res.status(200).json({ unreadCount });
+    const [result] = await Notification.aggregate([
+      {
+        $match: {
+          recipient: recipientObjectId,
+        },
+      },
+      {
+        $facet: {
+          unreadCount: [
+            { $match: { isRead: false } },
+            { $count: 'count' },
+          ],
+          reconciledNotificationIds: [
+            {
+              $match: {
+                _id: { $in: validReconcileObjectIds },
+              },
+            },
+            { $project: { _id: 1 } },
+          ],
+          reconciledUnread: [
+            {
+              $match: {
+                _id: { $in: validReconcileObjectIds },
+                isRead: false,
+              },
+            },
+            { $project: { _id: 1 } },
+          ],
+        },
+      },
+    ]);
+
+    const unreadCount = result?.unreadCount?.[0]?.count || 0;
+    const reconciledNotificationIds = (result?.reconciledNotificationIds || []).map((d) =>
+      d._id.toString()
+    );
+    const reconciledUnreadIds = (result?.reconciledUnread || []).map((d) =>
+      d._id.toString()
+    );
+
+    res.status(200).json({ unreadCount, reconciledNotificationIds, reconciledUnreadIds });
   } catch (err) {
     res.status(500).json({ message: 'Server error', error: err.message });
   }

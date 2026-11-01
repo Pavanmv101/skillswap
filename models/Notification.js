@@ -46,6 +46,9 @@ const notificationSchema = new mongoose.Schema(
         'CIRCULAR_LEG_SCHEDULE_CONFIRMED',
         'CIRCULAR_LEG_SCHEDULE_REJECTED',
         'CIRCULAR_LEG_SCHEDULE_RESCHEDULED',
+        'CIRCULAR_LEG_TEACHER_COMPLETED',
+        'CIRCULAR_LEG_COMPLETED',
+        'CIRCULAR_EXCHANGE_COMPLETED',
       ],
       required: true,
     },
@@ -64,6 +67,15 @@ const notificationSchema = new mongoose.Schema(
       ref: 'SwapRequest',
       default: null,
     },
+    outboxEvent: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'OutboxEvent',
+      default: null,
+    },
+    metadata: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {},
+    },
     isRead: {
       type: Boolean,
       default: false,
@@ -75,9 +87,21 @@ const notificationSchema = new mongoose.Schema(
   }
 );
 
-// Compound index for fast queries sorting newest first for a specific recipient
-notificationSchema.index({ recipient: 1, isRead: 1, createdAt: -1 });
-notificationSchema.index({ recipient: 1, createdAt: -1 });
+// Compound index for fast deterministic queries sorting newest first for a specific recipient
+notificationSchema.index({ recipient: 1, isRead: 1, createdAt: -1, _id: -1 });
+notificationSchema.index({ recipient: 1, createdAt: -1, _id: -1 });
+
+// Database-level uniqueness: guarantee at-most-one notification per outbox event
+notificationSchema.index(
+  { outboxEvent: 1 },
+  {
+    name: 'unique_notification_per_outbox_event',
+    unique: true,
+    partialFilterExpression: {
+      outboxEvent: { $type: 'objectId' },
+    },
+  }
+);
 
 // Database-level uniqueness: prevent duplicate reminder notifications for the same swap and recipient across clustered instances
 notificationSchema.index(

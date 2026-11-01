@@ -56,13 +56,41 @@ const outboxEventSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['pending', 'dispatched', 'failed'],
+      enum: ['pending', 'processing', 'dispatched', 'failed'],
       default: 'pending',
       index: true,
+    },
+    attempts: {
+      type: Number,
+      default: 0,
     },
     retryCount: {
       type: Number,
       default: 0,
+    },
+    lockedAt: {
+      type: Date,
+      default: null,
+    },
+    lockedBy: {
+      type: String,
+      default: null,
+    },
+    leaseExpiresAt: {
+      type: Date,
+      default: null,
+    },
+    nextRetryAt: {
+      type: Date,
+      default: null,
+    },
+    dispatchedAt: {
+      type: Date,
+      default: null,
+    },
+    payload: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {},
     },
     error: {
       type: String,
@@ -72,8 +100,10 @@ const outboxEventSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// High-selectivity compound indexes for pending-event retrieval and aggregate lookups
+// High-selectivity compound indexes for claim queries, lease expiry recovery, and aggregate lookups
 outboxEventSchema.index({ status: 1, createdAt: 1 });
+outboxEventSchema.index({ status: 1, leaseExpiresAt: 1, attempts: 1 });
+outboxEventSchema.index({ status: 1, nextRetryAt: 1, attempts: 1, createdAt: 1 });
 outboxEventSchema.index({ aggregateType: 1, aggregateId: 1 });
 
 module.exports = mongoose.model('OutboxEvent', outboxEventSchema);

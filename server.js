@@ -25,6 +25,7 @@ const circularRoutes = require('./routes/circularRoutes');
 // Import notification and reminder services
 const { setIO } = require('./services/notificationService');
 const { initReminderScheduler, stopReminderScheduler } = require('./services/reminderService');
+const { initOutboxDispatcher, stopOutboxDispatcher } = require('./services/outboxDispatcher');
 
 const app = express();
 const server = http.createServer(app);
@@ -295,8 +296,9 @@ io.on('connection', (socket) => {
 const PORT = process.env.PORT || 5001;
 
 if (require.main === module) {
-  // Initialize background session reminder scheduler
+  // Initialize background session reminder scheduler and transactional outbox dispatcher
   initReminderScheduler();
+  initOutboxDispatcher(io);
 
   server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
@@ -323,11 +325,18 @@ const gracefulShutdown = async (signal = 'SIGTERM') => {
 
   let hasError = false;
 
-  // 1. Stop background reminder scheduler
+  // 1. Stop background reminder scheduler and outbox dispatcher
   try {
     stopReminderScheduler();
   } catch (schedErr) {
     console.error('[Server] Error stopping reminder scheduler:', schedErr.message);
+    hasError = true;
+  }
+
+  try {
+    await stopOutboxDispatcher();
+  } catch (outboxErr) {
+    console.error('[Server] Error stopping outbox dispatcher:', outboxErr.message);
     hasError = true;
   }
 
