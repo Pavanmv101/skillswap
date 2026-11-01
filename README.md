@@ -1,204 +1,313 @@
-# SkillSwap: Peer-to-Peer Skill Barter System
+# SkillSwap: Peer-to-Peer Collaborative Skill Barter Platform
 
-SkillSwap is a full-stack MERN (MongoDB, Express, React, Node.js) platform designed for college students and peers to exchange skills without monetary transactions. Users list skills they can teach and skills they want to learn. The system calculates bidirectional compatibility scores, detects schedule overlaps, facilitates swap requests, hosts live video sessions via Jitsi Meet, and tracks mutual ratings and reviews.
-
----
-
-## Tech Stack
-
-| Layer | Technology | Details |
-|---|---|---|
-| **Frontend** | React 18, Vite | SPA with React Router v6, custom modular CSS |
-| **State & Auth** | React Context API | Token persisted in `localStorage`, Axios interceptors |
-| **Backend** | Node.js, Express 5 | RESTful API architecture |
-| **Database** | MongoDB, Mongoose | Relational-like schema with subdocuments & references |
-| **Authentication**| JWT (`jsonwebtoken`) & `bcryptjs` | Stateless bearer token authentication |
-| **Video Calls** | Custom Native WebRTC & Socket.io | Peer-to-peer audio/video streaming, screen sharing, STUN signaling |
+SkillSwap is a production-grade full-stack web application designed for students, developers, and lifelong learners to exchange skills collaboratively without monetary transactions. By combining direct bilateral swaps, 3-person circular trade cycles, rule-based weighted recommendation algorithms, peer endorsements, trust verifications, and browser-native WebRTC video calling, SkillSwap provides an end-to-end decentralized learning network.
 
 ---
 
-## Project Structure
+## 1. Problem Statement
+
+Traditional tutoring and course platforms require financial payments, pricing out students and self-learners. Existing barter systems suffer from:
+1. **The Double Coincidence of Wants:** Person A wants to learn what Person B teaches, but Person B wants something Person A cannot offer.
+2. **Lack of Trust & Accountability:** Unverified skill claims and rampant no-shows undermine peer collaboration.
+3. **Fragmented Communication:** Scheduling sessions across disparate timezones and juggling third-party meeting links causes friction.
+
+SkillSwap solves these challenges by implementing **3-way circular exchange discovery** (A → B → C → A), an **explainable hybrid recommendation engine**, **reliability scoring and skill verifications**, **timezone-aware proposal scheduling**, and **in-browser authenticated WebRTC video sessions**.
+
+---
+
+## 2. Key Features
+
+### 🔄 Peer-to-Peer Skill Exchange
+- **Bilateral Swaps:** Direct 1-to-1 skill barter proposals with acceptance, rejection, cancellation, and scheduling lifecycles.
+- **3-Way Circular Exchanges:** Graph cycle detection identifies closed-loop trading loops ($A \to B \to C \to A$), enabling participants to learn their desired skill even without a direct mutual match.
+- **Atomic Reservation Locks:** Concurrency control prevents participants from double-booking overlapping exchanges or accepting conflicting invitations.
+
+### 🎯 Hybrid Weighted Recommendations
+- Transparent, explainable rule-based matching engine combining:
+  - **Skill Direct Compatibility:** Bidirectional match score between offered and wanted skills.
+  - **Reliability & Reputation Weight:** Completion rates, punctuality, and Bayesian average ratings.
+  - **Availability & Timezone Alignment:** Overlap detection across active participant availability windows.
+- *Note:* The recommendation engine is strictly deterministic and rule-based; it does not utilize black-box machine learning.
+
+### 🛡️ Skill Verification & Peer Endorsements
+- **Credential Verification:** Users submit certificates, project URLs, and proofs for administrative review and official verification badges.
+- **Peer Endorsements:** Verified peers endorse each other on specific skills with database-enforced unique constraints to prevent spam.
+
+### 📈 Reliability & Reputation Scoring
+- Dynamic scoring based on swap completion history, session attendance, cancellation frequency, and mutual star ratings with written reviews.
+
+### 📹 Authenticated WebRTC Video Sessions
+- In-browser peer-to-peer audio/video streaming and screen sharing powered by native WebRTC and Socket.io signaling.
+- Centralized database authorization: Only authenticated participants assigned to a specific swap or circular leg may join video rooms or exchange signaling packets.
+- Optimized indexed room resolution via a sparse database index on `SwapRequest.roomId`.
+
+### 📅 Timezone-Aware Proposal Scheduling
+- Interactive scheduling modal supporting IANA timezones and local browser time conversion.
+- Two-way proposal review: Teachers propose dates/times; learners review and confirm or request rescheduling with reason tracking. Existing confirmed schedules remain active until a new proposal is mutually confirmed.
+
+### ✅ Two-Stage Learner-Confirmed Completion
+- Independent leg completion: Teachers mark their teaching session complete; learners confirm delivery.
+- Parent circular exchanges finalize automatically only when all three legs are confirmed by their respective learners.
+
+### 📬 Transactional Outbox & Real-Time Notifications
+- Guaranteed event delivery using MongoDB transactional outbox patterns.
+- Background polling dispatcher with lease fencing, exponential retry backoff, and terminal failure handling.
+- Real-time Socket.io delivery with synchronized unread-count reconciliation.
+
+---
+
+## 3. Technology Stack
+
+| Component | Technology | Version / Details |
+| :--- | :--- | :--- |
+| **Backend Runtime** | Node.js | v18+ |
+| **Web Framework** | Express | v5.2.x |
+| **Database** | MongoDB | v6.0+ via Mongoose 9.x |
+| **Real-Time & Signaling**| Socket.io | v4.8.x (WebSockets & polling) |
+| **Security & Auth** | JWT (`jsonwebtoken`), `bcryptjs`, `express-rate-limit` | Stateless tokens, salted password hashes, IP rate limiting |
+| **Frontend Framework** | React | v18.x (Single-Page Application) |
+| **Build Tool** | Vite | v5.4.x |
+| **Routing** | React Router | v6.x |
+| **HTTP Client** | Axios | Configured with automatic bearer token interceptors |
+
+---
+
+## 4. Architecture Overview
+
+```
+                      ┌────────────────────────────────────────┐
+                      │          React SPA (Vercel)            │
+                      └──────────────────┬─────────────────────┘
+                                         │
+                         HTTPS REST API  │   WSS Signaling / Events
+                                         ▼
+                      ┌────────────────────────────────────────┐
+                      │       Express 5 Server (Render)        │
+                      │  - Auth Rate Limiter & Input Validator │
+                      │  - REST Controllers (Swap, Match, etc.)│
+                      │  - WebRTC Room Authorization Manager   │
+                      │  - Socket.io Real-Time Signaling Server│
+                      └──────────────┬───────────────────▲─────┘
+                                     │                   │
+                  Read/Write Queries │                   │ Lease Polling
+                                     ▼                   │
+                      ┌────────────────────────────┐     │
+                      │   MongoDB Atlas / Local    │     │
+                      │ - Users & Verification     │     │
+                      │ - Swaps & CircularExchanges│     │
+                      │ - Transactional Outbox ────┼─────┘
+                      └────────────────────────────┘
+```
+
+---
+
+## 5. Project Directory Structure
 
 ```
 skillswap/
 ├── backend/
 │   ├── config/
-│   │   └── db.js                 # MongoDB connection
+│   │   └── db.js                 # Database connection manager
 │   ├── controllers/
-│   │   ├── authController.js     # Register & Login with JWT
-│   │   ├── profileController.js  # User profile, public profiles, blocking
-│   │   ├── matchController.js    # Compatibility scoring algorithm & search
-│   │   ├── swapController.js     # Swap lifecycle (create, accept, reject, cancel, complete, schedule)
-│   │   └── ratingController.js   # Rating creation & aggregate calculations
+│   │   ├── adminController.js    # Skill verification moderation
+│   │   ├── authController.js     # User registration, login, and demo seeding
+│   │   ├── circularCompletionController.js # Two-stage leg completion & finalization
+│   │   ├── circularProposalController.js   # 3-way cycle detection & activation
+│   │   ├── circularSchedulingController.js # Timezone-aware scheduling & confirmation
+│   │   ├── endorsementController.js        # Peer skill endorsements
+│   │   ├── learningController.js # Learning progress tracking
+│   │   ├── matchController.js    # Compatibility scoring algorithm
+│   │   ├── notificationController.js       # Notification retrieval & read state
+│   │   ├── profileController.js  # Profile management & availability slots
+│   │   ├── ratingController.js   # Mutual ratings & reputation calculation
+│   │   ├── recommendationController.js     # Hybrid weighted recommendations
+│   │   ├── swapController.js     # Bilateral swap lifecycle
+│   │   └── verificationController.js       # Credential proof submissions
 │   ├── middleware/
-│   │   └── auth.js               # JWT verification middleware
+│   │   └── auth.js               # JWT authentication middleware
 │   ├── models/
-│   │   ├── User.js               # User schema (skills, availability, ratings)
-│   │   ├── SwapRequest.js        # Swap requests schema (status, roomId, schedule)
-│   │   └── Rating.js             # Ratings & review schema
-│   ├── routes/
-│   │   ├── authRoutes.js
-│   │   ├── profileRoutes.js
-│   │   ├── matchRoutes.js
-│   │   ├── swapRoutes.js
-│   │   └── ratingRoutes.js
-│   ├── seed.js                   # Demo users & sample swap seeder
-│   ├── .env                      # Port, DB URI, JWT secret
-│   └── server.js                 # Express app entrypoint
+│   │   ├── CircularExchange.js   # 3-way circular exchange schema & cycle validation
+│   │   ├── Endorsement.js        # Peer endorsements with unique index
+│   │   ├── ExchangeReservation.js# Atomic participant locks
+│   │   ├── LearningTrack.js      # Learning roadmaps & milestone assessments
+│   │   ├── Notification.js       # Notifications with outboxEvent reference
+│   │   ├── OutboxEvent.js        # Transactional outbox event store
+│   │   ├── Rating.js             # User ratings & feedback
+│   │   ├── SkillVerification.js  # Certificate verifications
+│   │   ├── SwapRequest.js        # Bilateral & circular child swaps with roomId sparse index
+│   │   └── User.js               # User accounts, skills, availability & ratings
+│   ├── routes/                   # Express route declarations
+│   ├── services/
+│   │   ├── notificationService.js # Notification creation and Socket.io emission
+│   │   ├── outboxDispatcher.js   # Transactional outbox worker with lease management
+│   │   └── reminderService.js    # Clustered session reminder scheduler
+│   ├── run_tests.js              # Unified Test Runner
+│   ├── test_db_guard.js          # Centralized test database isolation harness
+│   ├── package.json              # Backend dependencies & npm test scripts
+│   ├── seed.js                   # Demo accounts seeder
+│   └── server.js                 # Application entrypoint & WebRTC authorization
 │
 └── frontend/
     ├── index.html
-    ├── vite.config.js            # Proxy `/api` to port 5001
-    ├── package.json
+    ├── vite.config.js            # Vite build configuration & API proxy
+    ├── package.json              # Frontend dependencies
     └── src/
-        ├── api/
-        │   └── axios.js          # Pre-configured Axios instance with auth interceptor
-        ├── context/
-        │   └── AuthContext.jsx   # Global login/logout state
-        ├── components/
-        │   ├── Navbar.jsx        # Navigation bar with active route highlight
-        │   ├── CompatBar.jsx     # Visual compatibility score bar (0-100%)
-        │   ├── Stars.jsx         # 5-star rating display
-        │   ├── Spinner.jsx       # Loading indicator
-        │   ├── SwapModal.jsx     # Send swap request modal
-        │   ├── ScheduleModal.jsx # Date & time scheduler modal
-        │   └── RatingModal.jsx   # Post-session rating modal
-        ├── pages/
-        │   ├── Landing.jsx       # Public landing page with features overview
-        │   ├── Login.jsx         # User login form
-        │   ├── Register.jsx      # New account registration
-        │   ├── Dashboard.jsx     # Statistics overview & incoming notifications
-        │   ├── Profile.jsx       # Skills & weekly availability slot editor
-        │   ├── Matches.jsx       # Ranked matches, search & swap initiation
-        │   ├── Swaps.jsx         # Tabs for Received, Sent, Active & Completed swaps
-        │   ├── Room.jsx          # Live Jitsi video session screen
-        │   └── PublicProfile.jsx # Public peer profile & review history
-        ├── App.jsx               # Client routes & protected route wrapper
-        ├── main.jsx              # React root entrypoint
-        └── index.css             # Theme variables, cards, buttons, badges
+        ├── api/axios.js          # Axios client with bearer token interceptor
+        ├── components/           # Reusable UI components
+        │   ├── CircularCompletionModal.jsx # Teacher completion & learner confirmation
+        │   ├── CircularExchangeCard.jsx    # Interactive circular exchange leg card
+        │   ├── CircularScheduleModal.jsx   # Timezone-aware leg schedule modal
+        │   ├── Navbar.jsx        # Navigation & real-time notification bell
+        │   ├── RatingModal.jsx   # Post-session rating modal
+        │   └── ScheduleModal.jsx # Bilateral scheduling modal
+        ├── context/              # Context state providers (Auth, Notifications)
+        ├── pages/                # Application views (Dashboard, Swaps, Matches, Room)
+        ├── App.jsx               # Routes and PrivateRoute protection
+        └── main.jsx              # React DOM entrypoint
 ```
 
 ---
 
-## Quick Start Guide
+## 6. Environment Variables
 
-### 1. Backend Setup
+Configure environment variables in a `.env` file in the `backend/` directory.
 
+> **IMPORTANT:** Only environment variable names are listed below. Never commit production values, passwords, or connection strings.
+
+| Variable Name | Required | Purpose |
+| :--- | :--- | :--- |
+| `PORT` | Optional | Backend HTTP/WebSocket port (defaults to `5001` to avoid macOS AirPlay conflict on 5000) |
+| `MONGO_URI` | Required | MongoDB connection URI for application runtime |
+| `TEST_MONGO_URI` | Optional | Dedicated MongoDB connection URI for automated tests (defaults to `skillswap_test`) |
+| `JWT_SECRET` | Required | Secret key used for signing and verifying JWT tokens |
+| `CLIENT_URL` | Optional | Comma-separated list of allowed frontend origins for CORS |
+| `NODE_ENV` | Optional | Application runtime environment (`development`, `production`, or `test`) |
+
+---
+
+## 7. Local Setup Instructions
+
+### Prerequisites
+- Node.js v18 or later
+- MongoDB Community Server v6.0 or later installed and running locally
+- Git
+
+### 1. Clone Repository & Install Dependencies
 ```bash
+git clone <repository-url>
 cd backend
+
+# Install backend dependencies
 npm install
+
+# Install frontend dependencies
+cd ../frontend
+npm install
+cd ../backend
 ```
 
-Make sure your `.env` is configured (note: Port 5001 avoids macOS AirPlay port 5000 conflicts):
+### 2. Configure Environment
+Create a `.env` file inside the `backend/` directory:
 ```env
 PORT=5001
 MONGO_URI=mongodb://localhost:27017/skillswap
-JWT_SECRET=skillswap_super_secret_key_change_in_production
+TEST_MONGO_URI=mongodb://localhost:27017/skillswap_test
+JWT_SECRET=your_local_development_secret_key_minimum_32_characters
+CLIENT_URL=http://localhost:3000,http://localhost:5173
+NODE_ENV=development
 ```
 
-Start MongoDB service:
-```bash
-brew services start mongodb-community
-```
-
-*(Optional)* Seed sample users with skills, schedules, and reviews:
+### 3. Seed Demo Data (Optional)
+Populate sample users, bilateral swaps, ratings, and skill verifications:
 ```bash
 npm run seed
 ```
 
-Start the backend server:
+### 4. Start Development Servers
+Start backend server (Terminal 1):
 ```bash
+cd backend
 npm start
-# -> Connected to MongoDB: mongodb://localhost:27017/skillswap
 # -> Server running on port 5001
 ```
 
-### 2. Frontend Setup
-
+Start frontend development server (Terminal 2):
 ```bash
 cd frontend
-npm install
 npm run dev
-# -> Local: http://localhost:3001
+# -> Local: http://localhost:5173
 ```
 
-Open `http://localhost:3001` in your web browser.
+Open `http://localhost:5173` in your browser.
 
 ---
 
-## Compatibility Scoring Algorithm
+## 8. Test Execution Instructions
 
-To keep the application transparent and explainable to academic panels without black-box ML, the matching engine uses an intuitive rule-based scoring system (0–100 points):
+SkillSwap includes a **Unified Test Runner** backed by an **Automated Test Database Guard** ([`test_db_guard.js`](file:///Users/pavanmv/Downloads/backend/test_db_guard.js)). The guard guarantees that tests run exclusively against `skillswap_test`, completely preventing accidental data mutation or cleanup against the production database.
 
-1. **Forward Match (up to 60 pts)**:
-   $$\text{Points} = \min(60, \text{Count of your wanted skills offered by them} \times 20)$$
-2. **Reverse Match (up to 40 pts — Bidirectionality Bonus)**:
-   $$\text{Points} = \min(40, \text{Count of their wanted skills offered by you} \times 20)$$
-3. **Availability Overlap Check**:
-   $$\text{Overlap} \iff (\text{Day}_A = \text{Day}_B) \land (\text{From}_A < \text{To}_B) \land (\text{From}_B < \text{To}_A)$$
-   Displays an overlap badge so users know their schedules align before requesting a swap.
+Run test suites from the `backend/` directory:
 
----
+```bash
+# Run all verified integration test suites sequentially (127 tests)
+npm test
 
-## API Endpoints Reference
+# Run HTTP rate limiting, input validation, and WebRTC authorization security tests
+npm run test:security
 
-### Auth
-- `POST /api/auth/register` — Register a new account (`name`, `email`, `password`)
-- `POST /api/auth/login` — Login and receive JWT token + user details
+# Run WebRTC signaling, room authorization, and roomId sparse index tests
+npm run test:webrtc
 
-### Profile
-- `GET /api/profile` — Get logged-in user profile
-- `PUT /api/profile` — Update bio, skills offered, skills wanted, and availability slots
-- `GET /api/profile/:id` — View any user's public profile and reviews
-- `POST /api/profile/block/:id` — Block an abusive user
+# Run transactional outbox dispatcher, concurrency, and lease tests
+npm run test:outbox
 
-### Matching & Search
-- `GET /api/match` — Fetch ranked matches computed by compatibility score
-- `GET /api/match/search?q=keyword` — Search users by skill name or user name
+# Run 3-way circular exchanges, reservations, scheduling, and completion tests
+npm run test:circular
 
-### Swap Management
-- `POST /api/swap` — Initiate a swap request
-- `GET /api/swap` — List all swaps (sent and received)
-- `PUT /api/swap/:id/accept` — Accept swap & generate unique Jitsi `roomId`
-- `PUT /api/swap/:id/reject` — Reject a pending swap
-- `PUT /api/swap/:id/cancel` — Cancel a pending swap sent by you
-- `PUT /api/swap/:id/complete` — Mark an accepted swap as completed
-- `PUT /api/swap/:id/schedule` — Set date/time for the session
+# Run Phase 7 security remediations, roomId index, and db guard verification
+npm run test:phase7
 
-### Ratings & Feedback
-- `POST /api/rating` — Submit a 1–5 star rating and comment (prevents duplicates)
-- `GET /api/rating/user/:id` — Get all ratings and reviews for a user
+# Run MongoDB Atlas replica-set transaction verification suite (11 tests)
+npm run test:atlas
+```
+
+All test suites execute deterministically, require zero manual database preparation, and cleanly disconnect all sockets, timers, and database connections upon completion.
 
 ---
 
-## Demo Accounts (Populated by `npm run seed`)
+## 9. Deployment Architecture
 
-| Name | Email | Password | Teaches | Wants |
-|---|---|---|---|---|
-| Aarav Sharma | `aarav@skillswap.com` | `password123` | React, JavaScript, Node.js | Python, Machine Learning |
-| Priya Patel | `priya@skillswap.com` | `password123` | Python, Machine Learning, Data Analysis | React, UI/UX Design |
-| Rohan Verma | `rohan@skillswap.com` | `password123` | UI/UX Design, Figma | JavaScript, React |
-| Sneha Kulkarni | `sneha@skillswap.com` | `password123` | Acoustic Guitar, Music Production | Python, Spanish |
+SkillSwap is architected for cloud deployment across decoupled, managed infrastructure:
+
+- **Frontend Deployment (Vercel):**
+  - **Live URL:** [https://skillswap-eight-pink.vercel.app](https://skillswap-eight-pink.vercel.app)
+  - Hosted as a high-performance Single Page Application (SPA).
+  - Configured with `vercel.json` rewrites to route API calls or direct cross-origin Axios calls to the backend.
+- **Backend Deployment (Render):**
+  - **Live API:** [https://skillswap-api-23ag.onrender.com](https://skillswap-api-23ag.onrender.com)
+  - Containerized Node.js web service running with Express and Socket.io.
+  - Reverse proxy trust configured via `app.set('trust proxy', 1)` to support accurate IP rate limiting behind front-facing load balancers.
+  - Strict CORS origin validation allows verified Vercel preview branches while rejecting domain lookalikes.
+- **Database (MongoDB Atlas):**
+  - Managed MongoDB replica set with SSL/TLS encryption.
+  - Fully supports multi-document ACID transactions for circular exchange reservations and outbox event persistence.
 
 ---
 
-## Academic Panel & Viva Questions Cheat Sheet
+## 10. Known Limitations & Future Scope
 
-**Q: Why use MERN stack instead of traditional SQL/Django/PHP?**
-> A: MERN offers a single-language ecosystem (JavaScript/Node.js) from client to database. MongoDB's JSON/BSON document model naturally matches React state, making it ideal for flexible profile structures like varying lists of skills and availability slots.
-
-**Q: How does the matching algorithm work?**
-> A: It calculates a bidirectional compatibility score. Up to 60 points are given for forward matches (the candidate teaches skills you want), and up to 40 bonus points are awarded for reverse matches (you can teach skills the candidate wants). It also checks for overlapping day/time availability windows.
-
-**Q: How are passwords and authentication secured?**
-> A: Passwords are encrypted using salted one-way hashing via `bcryptjs` (salt rounds = 10) before persisting to MongoDB. Authenticated sessions use signed JSON Web Tokens (JWT) transmitted via the standard `Authorization: Bearer <token>` HTTP header.
-
-**Q: How is native WebRTC implemented for video calling?**
-> A: We built a custom WebRTC implementation without relying on third-party services. The architecture consists of:
-> 1. **Media Capture**: `navigator.mediaDevices.getUserMedia()` accesses user webcam and microphone streams.
-> 2. **Signaling Server**: An Express + Socket.io server relays SDP (Session Description Protocol) offers, answers, and ICE candidates between peers.
-> 3. **P2P Connection**: `new RTCPeerConnection()` establishes a direct peer-to-peer connection utilizing public Google STUN servers (`stun:stun.l.google.com:19302`) for NAT traversal.
-> 4. **Screen Sharing**: `navigator.mediaDevices.getDisplayMedia()` dynamically replaces the outgoing video track on the WebRTC sender.
-
-**Q: How is data consistency maintained for user ratings?**
-> A: Each rating is stored as an individual record linking the swap request, rater, and ratee. Upon creating a rating, the controller prevents duplicate ratings for the same swap and re-computes `averageRating` and `totalRatings` on the ratee's User document.
+1. **Advanced ML-Based Recommendations:**
+   - *Current Implementation:* Deterministic, rule-based weighted algorithm combining compatibility, availability overlap, and user ratings.
+   - *Future Scope:* Graph neural networks (GNN) and collaborative filtering to predict successful long-term peer mentorships.
+2. **Automated Optimal Scheduling:**
+   - *Current Implementation:* Two-way proposal/confirm workflow with participant timezone display.
+   - *Future Scope:* Automated multi-party calendar synchronization (Google Calendar / Outlook iCal integration) to automatically propose optimal intersecting slots.
+3. **TURN Relay Configuration:**
+   - *Current Implementation:* Utilizes public Google STUN servers (`stun:stun.l.google.com:19302`) for WebRTC NAT traversal.
+   - *Future Scope:* In corporate, university, or cellular networks with symmetric NATs, a dedicated TURN relay server (e.g., Coturn) is recommended for media fallback.
+4. **Multilingual & Localization Support:**
+   - *Current Implementation:* Single-language (English) interface.
+   - *Future Scope:* Full internationalization (i18n) support across skill taxonomies and interface strings.
+5. **Dedicated Native Mobile Applications:**
+   - *Current Implementation:* Responsive web application optimized for mobile and desktop viewports.
+   - *Future Scope:* Native mobile clients (React Native or Flutter) leveraging native WebRTC drivers and push notification services.
