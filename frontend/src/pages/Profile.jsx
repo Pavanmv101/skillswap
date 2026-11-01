@@ -24,6 +24,14 @@ export default function Profile() {
   const [skillsOffered, setSkillsOffered] = useState([])
   const [skillsWanted,  setSkillsWanted]  = useState([])
   const [slots,         setSlots]         = useState([])
+  const detectedTz = useMemo(() => {
+    try {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+    } catch (_) {
+      return 'UTC'
+    }
+  }, [])
+  const [timezone, setTimezone] = useState('')
 
   // Phase 3: Verification & Endorsement state
   const [myVerifications, setMyVerifications] = useState([])
@@ -43,6 +51,7 @@ export default function Profile() {
       setSkillsOffered(data.skillsOffered || [])
       setSkillsWanted(data.skillsWanted   || [])
       setSlots(data.availabilitySlots     || [])
+      setTimezone(data.timezone || detectedTz)
       setMyVerifications(verifRes.data || [])
 
       const userId = data._id || user?.id
@@ -139,6 +148,17 @@ export default function Profile() {
       }
     }
 
+    const effectiveTz = (timezone || detectedTz).trim()
+    try {
+      Intl.DateTimeFormat(undefined, { timeZone: effectiveTz })
+    } catch (_) {
+      const msg = `Invalid timezone: "${effectiveTz}". Please use a valid IANA timezone (e.g. Asia/Kolkata, America/New_York)`
+      setError(msg)
+      addToast(msg, 'warning')
+      setSaving(false)
+      return
+    }
+
     const offered = skillsOffered.filter(s => s.skill.trim())
     const wanted  = skillsWanted.filter(s => s.skill.trim())
 
@@ -149,9 +169,11 @@ export default function Profile() {
         skillsOffered: offered,
         skillsWanted:  wanted,
         availabilitySlots: slots,
+        timezone: effectiveTz,
       })
       setSkillsOffered(data.skillsOffered || offered)
       setSkillsWanted(data.skillsWanted   || wanted)
+      setTimezone(data.timezone || effectiveTz)
 
       // Update auth context name
       login(localStorage.getItem('token'), { ...user, name: data.name })
@@ -403,6 +425,31 @@ export default function Profile() {
             <button type="button" className="btn btn-muted btn-sm" onClick={addSlot}>
               + Add Time Slot
             </button>
+          </div>
+
+          <div style={{ marginTop: '0.85rem', marginBottom: '0.85rem', padding: '0.65rem 0.85rem', background: 'var(--bg-subtle, rgba(0,0,0,0.03))', borderRadius: '8px', border: '1px solid var(--border-color, #e2e8f0)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <div>
+              <span style={{ fontSize: '.84rem', fontWeight: 600 }}>🌍 Timezone:</span>{' '}
+              <span style={{ fontSize: '.84rem', color: 'var(--text-main)' }}>{timezone || detectedTz}</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <input
+                className="form-input"
+                style={{ width: 180, fontSize: '.8rem', padding: '0.25rem 0.5rem' }}
+                value={timezone}
+                onChange={e => setTimezone(e.target.value)}
+                placeholder="e.g. Asia/Kolkata"
+              />
+              <button
+                type="button"
+                className="btn btn-muted btn-sm"
+                style={{ fontSize: '.75rem', padding: '0.25rem 0.5rem' }}
+                onClick={() => setTimezone(detectedTz)}
+                title={`Reset to browser detected timezone (${detectedTz})`}
+              >
+                Auto-detect
+              </button>
+            </div>
           </div>
 
           <div style={{ marginTop: '1rem' }}>

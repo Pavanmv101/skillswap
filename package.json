@@ -5,7 +5,14 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node run_tests.js all",
+    "test:security": "node run_tests.js security",
+    "test:webrtc": "node run_tests.js webrtc",
+    "test:outbox": "node run_tests.js outbox",
+    "test:circular": "node run_tests.js circular",
+    "test:phase7": "node run_tests.js phase7",
+    "test:atlas": "node test_phase7_atlas_transactions.js",
+    "test:all": "node run_tests.js all"
   },
   "keywords": [],
   "author": "",
@@ -15,6 +22,7 @@
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.7.2",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.9.5",
     "socket.io": "^4.8.1"

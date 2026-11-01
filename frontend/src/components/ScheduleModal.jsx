@@ -4,13 +4,25 @@ import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import AvailabilityCalendar, { findMutualOverlaps } from './AvailabilityCalendar'
 
+function formatLocalDateTime(val) {
+  if (!val) return ''
+  const d = new Date(val)
+  if (isNaN(d.getTime())) return ''
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  const hours = String(d.getHours()).padStart(2, '0')
+  const mins = String(d.getMinutes()).padStart(2, '0')
+  return `${year}-${month}-${day}T${hours}:${mins}`
+}
+
 export default function ScheduleModal({ swap, onClose }) {
   const { user } = useAuth()
   const { addToast } = useToast()
 
-  // Format existing scheduled time if any, else default to empty
+  // Format existing scheduled time if any in local time, else default to empty
   const [dateTime, setDateTime] = useState(
-    swap?.scheduledAt ? new Date(swap.scheduledAt).toISOString().slice(0, 16) : ''
+    swap?.scheduledAt ? formatLocalDateTime(swap.scheduledAt) : ''
   )
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -95,7 +107,7 @@ export default function ScheduleModal({ swap, onClose }) {
 
     setLoading(true)
     try {
-      await api.put(`/swap/${swap._id}/schedule`, { scheduledAt: dateTime })
+      await api.put(`/swap/${swap._id}/schedule`, { scheduledAt: pickedDate.toISOString() })
       setDone(true)
       addToast('Session scheduled successfully! 📅', 'success')
     } catch (err) {
@@ -109,9 +121,15 @@ export default function ScheduleModal({ swap, onClose }) {
 
   // Get current local time ISO string for min attribute in input
   const minDateTime = useMemo(() => {
-    const now = new Date()
-    now.setMinutes(now.getMinutes() - now.getTimezoneOffset())
-    return now.toISOString().slice(0, 16)
+    return formatLocalDateTime(new Date())
+  }, [])
+
+  const localTimezone = useMemo(() => {
+    try {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+    } catch (_) {
+      return 'UTC'
+    }
   }, [])
 
   return (
@@ -123,7 +141,7 @@ export default function ScheduleModal({ swap, onClose }) {
             <h3>Session Scheduled!</h3>
             <p style={{ color: 'var(--text-muted)', margin: '.75rem 0 1.5rem', lineHeight: 1.5 }}>
               Session confirmed with <strong>{partner?.name || 'partner'}</strong> for{' '}
-              <strong>{new Date(dateTime).toLocaleString([], { dateStyle: 'full', timeStyle: 'short' })}</strong>.
+              <strong>{new Date(dateTime).toLocaleString([], { dateStyle: 'full', timeStyle: 'short', timeZoneName: 'short' })}</strong>.
             </p>
             <button className="btn btn-primary btn-block" onClick={onClose}>
               Done
@@ -149,7 +167,7 @@ export default function ScheduleModal({ swap, onClose }) {
                 <AvailabilityCalendar
                   slots={partnerSlots}
                   peerSlots={mySlots}
-                  title={`${partner?.name || 'Partner'}'s Free Hours`}
+                  title={`${partner?.name || 'Partner'}'s Free Hours${partner?.timezone ? ` (${partner.timezone})` : ''}`}
                   onSelectSlot={handleQuickPickSlot}
                 />
               </div>
@@ -169,7 +187,7 @@ export default function ScheduleModal({ swap, onClose }) {
                   required
                 />
                 <span style={{ fontSize: '.76rem', color: 'var(--text-subtle)', marginTop: '.3rem', display: 'block' }}>
-                  Tip: Click any slot above to auto-fill the next matching time.
+                  Times shown in your local timezone ({localTimezone}). Click any slot above to auto-fill the next matching time.
                 </span>
               </div>
 

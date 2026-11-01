@@ -25,6 +25,23 @@ export function getNotificationIcon(type) {
     case 'ASSESSMENT_SUBMITTED':   return '📊'
     case 'ASSESSMENT_EVALUATED':   return '📋'
     case 'TRACK_COMPLETED':        return '🏆'
+    case 'CIRCULAR_SWAP_PROPOSED':
+    case 'CIRCULAR_INVITATION_RECEIVED':    return '📬'
+    case 'CIRCULAR_SWAP_ACCEPTED_PARTIAL':
+    case 'CIRCULAR_INVITATION_ACCEPTED':    return '✅'
+    case 'CIRCULAR_SWAP_ACTIVATED':         return '🚀'
+    case 'CIRCULAR_SWAP_DECLINED':
+    case 'CIRCULAR_SWAP_CANCELLED':
+    case 'CIRCULAR_PROPOSAL_DECLINED':      return '🚫'
+    case 'CIRCULAR_LEG_SCHEDULE_PROPOSED':  return '📅'
+    case 'CIRCULAR_LEG_SCHEDULE_RESCHEDULED': return '🔄'
+    case 'CIRCULAR_LEG_SCHEDULE_CONFIRMED': return '✅'
+    case 'CIRCULAR_LEG_SCHEDULE_REJECTED':  return '❌'
+    case 'CIRCULAR_LEG_TEACHER_COMPLETED':  return '🎓'
+    case 'CIRCULAR_LEG_COMPLETED':          return '⭐'
+    case 'CIRCULAR_SWAP_COMPLETED':
+    case 'CIRCULAR_EXCHANGE_COMPLETED':
+    case 'CIRCULAR_EXCHANGE_FINALIZED':     return '🏆'
     default:                   return '🔔'
   }
 }
@@ -71,6 +88,19 @@ export default function Notifications() {
 
     if (n.type?.includes('MILESTONE') || n.type?.includes('LEARNING') || n.type?.includes('ASSESSMENT') || n.type?.includes('TRACK')) {
       navigate('/learning')
+      return
+    }
+
+    if (n.type?.startsWith('CIRCULAR_')) {
+      if (n.type === 'CIRCULAR_SWAP_PROPOSED' || n.type === 'CIRCULAR_INVITATION_RECEIVED') {
+        navigate('/swaps?mode=circular&tab=invitations')
+      } else if (n.type === 'CIRCULAR_EXCHANGE_COMPLETED' || n.type === 'CIRCULAR_SWAP_COMPLETED' || n.type === 'CIRCULAR_EXCHANGE_FINALIZED') {
+        navigate('/swaps?mode=circular&tab=completed')
+      } else if (n.type === 'CIRCULAR_SWAP_DECLINED' || n.type === 'CIRCULAR_SWAP_CANCELLED' || n.type === 'CIRCULAR_PROPOSAL_DECLINED') {
+        navigate('/swaps?mode=circular&tab=history')
+      } else {
+        navigate('/swaps?mode=circular&tab=active')
+      }
       return
     }
 

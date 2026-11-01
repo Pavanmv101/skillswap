@@ -24,6 +24,7 @@ const userSchema = new mongoose.Schema(
       {
         skill:    { type: String, required: true, trim: true },
         category: { type: String, default: 'General' },
+        level:    { type: String, enum: ['Beginner', 'Intermediate', 'Advanced'] },
         priority: { type: String, enum: ['Low', 'Medium', 'High'], default: 'Medium' },
       },
     ],
@@ -37,6 +38,26 @@ const userSchema = new mongoose.Schema(
         to:   { type: String }, // "HH:MM"
       },
     ],
+
+    // IANA timezone string (e.g. "Asia/Kolkata", "America/Los_Angeles")
+    // Interprets availabilitySlots in user's local timezone.
+    timezone: {
+      type: String,
+      default: null,
+      trim: true,
+      validate: {
+        validator: function(v) {
+          if (v === null || v === undefined || v === '') return true;
+          try {
+            Intl.DateTimeFormat(undefined, { timeZone: v });
+            return true;
+          } catch (_) {
+            return false;
+          }
+        },
+        message: props => `${props.value} is not a valid IANA timezone identifier`,
+      },
+    },
 
     // Legacy free-text availability kept for backward compatibility
     availability: { type: String, default: '' },

@@ -26,6 +26,18 @@ const swapRequestSchema = new mongoose.Schema(
     // Compatibility score calculated at request-creation time
     compatibilityScore: { type: Number, default: 0 },
     compatibilityNote:  { type: String, default: '' },
+
+    // Phase 6 Step 3: Link child swap to parent circular exchange
+    circularExchange: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'CircularExchange',
+      default: null,
+      index: true,
+    },
+    circularLegIndex: {
+      type: Number,
+      default: null,
+    },
   },
   { timestamps: true }
 );
@@ -37,5 +49,10 @@ swapRequestSchema.index({ status: 1 });
 swapRequestSchema.index({ status: 1, scheduledAt: 1 });
 // Phase 5: compound index for already-connected pair lookup
 swapRequestSchema.index({ fromUser: 1, toUser: 1, status: 1 });
+// Phase 6: compound indexes for exchange reliability and lifecycle queries
+swapRequestSchema.index({ fromUser: 1, status: 1 });
+swapRequestSchema.index({ toUser: 1, status: 1 });
+// Phase 7.2.1: sparse index for WebRTC room authorization lookup
+swapRequestSchema.index({ roomId: 1 }, { sparse: true });
 
 module.exports = mongoose.model('SwapRequest', swapRequestSchema);

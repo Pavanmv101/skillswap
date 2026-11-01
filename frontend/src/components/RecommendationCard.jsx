@@ -110,9 +110,12 @@ export default function RecommendationCard({ rec, mySlots = [], onRequestSwap })
           }}
         >
           {scoreBreakdown.forwardMatch    > 0 && <span title="Forward match"    className="score-chip">↓ {scoreBreakdown.forwardMatch}pt match</span>}
+          {scoreBreakdown.levelFitScore   > 0 && <span title="Skill level compatibility" className="score-chip">🎯 {scoreBreakdown.levelFitScore}pt level</span>}
           {scoreBreakdown.reverseMatch    > 0 && <span title="Reverse match"    className="score-chip">↑ {scoreBreakdown.reverseMatch}pt reverse</span>}
           {scoreBreakdown.verificationBoost > 0 && <span title="Verified skills" className="score-chip">✓ {scoreBreakdown.verificationBoost}pt verified</span>}
+          {scoreBreakdown.exchangeReliability > 0 && <span title="Exchange reliability" className="score-chip">🤝 {scoreBreakdown.exchangeReliability}pt reliable</span>}
           {scoreBreakdown.ratingScore     > 0 && <span title="Rating"           className="score-chip">⭐ {scoreBreakdown.ratingScore}pt rating</span>}
+          {scoreBreakdown.learningTrackMastery > 0 && <span title="Learning track mastery" className="score-chip">🎓 {scoreBreakdown.learningTrackMastery}pt mastery</span>}
           {scoreBreakdown.endorsementScore > 0 && <span title="Endorsements"    className="score-chip">👍 {scoreBreakdown.endorsementScore}pt endorsed</span>}
           {availabilityOverlap === true         && <span title="Schedule overlap" className="score-chip">⏰ schedule</span>}
         </div>

@@ -192,7 +192,7 @@ export default function PublicProfile() {
             <AvailabilityCalendar
               slots={profile.availabilitySlots}
               peerSlots={myProfile?.availabilitySlots || []}
-              title={`${profile.name}'s Weekly Schedule`}
+              title={`${profile.name}'s Weekly Schedule${profile.timezone ? ` (${profile.timezone})` : ''}`}
             />
           </div>
         )}

@@ -1,43 +1,54 @@
 /**
- * Phase 5 — Intelligent Recommendation Engine
+ * Phase 6 — Advanced Skill Exchange Algorithm (Step 2)
  * controllers/recommendationController.js
  *
- * All scoring is rule-based, fully transparent, and computed server-side only.
- * No ML, no paid APIs, no external services.
+ * Upgraded scoring engine with:
+ * - Directional skill-level expertise compatibility (tutor vs learner)
+ * - Demonstrated learning track mastery (instructor/learner completion & practical assessments)
+ * - Exchange reliability integration via services/reliabilityService.js (single-query batching)
  *
  * Scoring weights (sum = 100):
- *   Forward match   35 pts  (they offer what I want, priority-weighted)
- *   Reverse match   25 pts  (I offer what they want, priority-weighted)
- *   Verification    15 pts  (admin-approved SkillVerification records only)
- *   Rating          10 pts  (confidence-aware Bayesian adjustment)
- *   Endorsements     8 pts  (peer endorsements on matched skills)
- *   Availability     5 pts  (overlapping time-slots)
- *   Category         2 pts  (category affinity of matched skills)
- *   ─────────────────────────
- *   Total          100 pts
+ *   Forward match            25 pts  (they offer what I want, priority-weighted)
+ *   Level fit                 5 pts  (tutor expertise meets or exceeds requested level)
+ *   Reverse reciprocity      20 pts  (I offer what they want, priority-weighted)
+ *   Skill verification       15 pts  (admin-approved SkillVerification records)
+ *   Exchange reliability     15 pts  (Bayesian smoothed exchange completion rate)
+ *   Bayesian rating           8 pts  (confidence-aware adjusted rating)
+ *   Learning track mastery    5 pts  (verified course completion / practicals)
+ *   Peer endorsements         5 pts  (peer endorsements on matched skills)
+ *   Availability              2 pts  (overlapping time-slots)
+ *   ─────────────────────────────────
+ *   Total                   100 pts
  *
- * Learning history is intentionally excluded from the scoring formula
- * in Phase 5 MVP. It is reserved for future skill-suggestion improvements.
+ * Backward-compatible: retains categoryScore in scoreBreakdown for Phase 5 frontend compatibility.
+ * All scoring is rule-based, fully transparent, and computed server-side only.
+ * No ML, no paid APIs, no external services.
  */
 
 'use strict';
 
-const User             = require('../models/User');
-const SwapRequest      = require('../models/SwapRequest');
-const Endorsement      = require('../models/Endorsement');
-const Rating           = require('../models/Rating');
-const SkillVerification = require('../models/SkillVerification');
+const User                  = require('../models/User');
+const SwapRequest           = require('../models/SwapRequest');
+const Endorsement           = require('../models/Endorsement');
+const Rating                = require('../models/Rating');
+const SkillVerification      = require('../models/SkillVerification');
+const LearningTrack         = require('../models/LearningTrack');
+const { getBatchExchangeReliability } = require('../services/reliabilityService');
+const { findCircularCycles }  = require('../services/cycleDetectionService');
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const WEIGHTS = {
-  forward:      35,
-  reverse:      25,
+  forward:      25,
+  levelFit:      5,
+  reverse:      20,
   verification: 15,
-  rating:       10,
-  endorsement:   8,
-  availability:  5,
-  category:      2,
+  reliability:  15,
+  rating:        8,
+  trackMastery:  5,
+  endorsement:   5,
+  availability:  2,
+  category:      2, // Preserved in scoreBreakdown for Phase 5 frontend compatibility
 };
 
 // Confidence-aware rating: global prior (mean rating on the platform = 3.5, weight = 5 pseudo-ratings)
@@ -46,6 +57,13 @@ const PRIOR_WEIGHT    = 5;
 
 // Priority multipliers for skillsWanted entries
 const PRIORITY_WEIGHT = { High: 1.0, Medium: 0.7, Low: 0.4 };
+
+// Skill level numeric rank mapping
+const LEVEL_VALUES = {
+  beginner:     1,
+  intermediate: 2,
+  advanced:     3,
+};
 
 // Fields returned for every recommended user — never exposes passwords, certs, or admin data
 const PUBLIC_USER_FIELDS =
@@ -66,6 +84,177 @@ function norm(value, max) {
  */
 function skillNames(arr = []) {
   return arr.map(s => s.skill.trim().toLowerCase());
+}
+
+/**
+ * Normalise a level string to lowercase known token, or null.
+ */
+function normalizeLevel(level) {
+  if (!level || typeof level !== 'string') return null;
+  const l = level.trim().toLowerCase();
+  return LEVEL_VALUES[l] ? l : null;
+}
+
+/**
+ * Directional level compatibility: tutor's offered level vs learner's requested level.
+ * Returns score in [0, 1].
+ *
+ * Logic:
+ * - If learner did not specify an explicit requested level:
+ *   - Advanced tutor: 1.0
+ *   - Intermediate tutor: 0.85
+ *   - Beginner tutor: 0.70
+ * - If learner specified a level:
+ *   - diff = tutorRank - learnerRank
+ *   - diff > 0 (Tutor exceeds requested level): 1.0
+ *   - diff === 0 (Exact match): 0.95
+ *   - diff === -1 (1 level below requested): 0.45
+ *   - diff <= -2 (2 levels below requested, e.g. Beginner teaching Advanced): 0.15
+ */
+function computeSkillLevelCompatibility(tutorLevelStr, learnerLevelStr) {
+  const tutorNorm = normalizeLevel(tutorLevelStr);
+  const learnerNorm = normalizeLevel(learnerLevelStr);
+
+  const tutorRank = tutorNorm ? LEVEL_VALUES[tutorNorm] : 1; // default to Beginner (1) if unknown
+
+  if (!learnerNorm) {
+    if (tutorRank === 3) return 1.0;
+    if (tutorRank === 2) return 0.85;
+    return 0.70;
+  }
+
+  const learnerRank = LEVEL_VALUES[learnerNorm];
+  const diff = tutorRank - learnerRank;
+
+  if (diff > 0) {
+    return 1.0;
+  } else if (diff === 0) {
+    return 0.95;
+  } else if (diff === -1) {
+    return 0.45;
+  } else {
+    return 0.15;
+  }
+}
+
+/**
+ * Compute candidate's overall level fit across all forward-matched skills.
+ * Priority-weighted by the learner's wanted skill priority.
+ */
+function computeCandidateLevelFit(myWanted = [], candidateOffered = [], matchedSkills = []) {
+  if (!matchedSkills || matchedSkills.length === 0) {
+    return { score: 0, details: [] };
+  }
+
+  let totalWeight = 0;
+  let weightedScore = 0;
+  const details = [];
+
+  for (const skillName of matchedSkills) {
+    const want = myWanted.find(w => w.skill.trim().toLowerCase() === skillName.toLowerCase());
+    const offer = candidateOffered.find(o => o.skill.trim().toLowerCase() === skillName.toLowerCase());
+    const weight = PRIORITY_WEIGHT[want?.priority] ?? PRIORITY_WEIGHT.Medium;
+
+    const comp = computeSkillLevelCompatibility(offer?.level, want?.level);
+    weightedScore += comp * weight;
+    totalWeight += weight;
+
+    details.push({
+      skill: skillName,
+      tutorLevel: offer?.level || 'Beginner',
+      learnerLevel: want?.level || null,
+      compatibility: comp,
+    });
+  }
+
+  const score = totalWeight > 0 ? (weightedScore / totalWeight) : 0;
+  return { score, details };
+}
+
+/**
+ * Map candidate tracks to a fast lookup structure:
+ * candidateId -> { [skillLow]: { instructorCompleted: bool, learnerCompleted: bool, practicalPassed: bool } }
+ */
+function buildTrackMasteryMap(candidateTracks = [], candidateIds = []) {
+  const masteryMap = {};
+  for (const cid of candidateIds) {
+    masteryMap[cid.toString()] = {};
+  }
+
+  for (const track of candidateTracks) {
+    const skillLow = (track.skillName || '').trim().toLowerCase();
+    if (!skillLow) continue;
+
+    const isCompleted = track.status === 'completed';
+    const hasPractical = (track.assessments || []).some(
+      a => a.type === 'practical' && a.evaluationStatus === 'evaluated' && a.passed === true
+    );
+
+    const instId = track.instructor ? track.instructor.toString() : null;
+    const lrnId = track.learner ? track.learner.toString() : null;
+
+    if (instId && masteryMap[instId]) {
+      if (!masteryMap[instId][skillLow]) {
+        masteryMap[instId][skillLow] = {
+          instructorCompleted: false,
+          learnerCompleted: false,
+          practicalPassed: false,
+        };
+      }
+      if (isCompleted) masteryMap[instId][skillLow].instructorCompleted = true;
+    }
+
+    if (lrnId && masteryMap[lrnId]) {
+      if (!masteryMap[lrnId][skillLow]) {
+        masteryMap[lrnId][skillLow] = {
+          instructorCompleted: false,
+          learnerCompleted: false,
+          practicalPassed: false,
+        };
+      }
+      if (isCompleted) masteryMap[lrnId][skillLow].learnerCompleted = true;
+      if (hasPractical) masteryMap[lrnId][skillLow].practicalPassed = true;
+    }
+  }
+
+  return masteryMap;
+}
+
+/**
+ * Score learning track mastery for matched skills.
+ * Capped per skill (max achievement taken, duplicate tracks prevented).
+ * Never leaks private assessment or submission details.
+ */
+function scoreTrackMastery(candidateMastery = {}, matchedSkills = []) {
+  if (!matchedSkills || matchedSkills.length === 0 || !candidateMastery) {
+    return { score: 0, achievements: [] };
+  }
+
+  let totalScore = 0;
+  const achievements = [];
+
+  for (const skillName of matchedSkills) {
+    const low = skillName.trim().toLowerCase();
+    const m = candidateMastery[low];
+    if (!m) continue;
+
+    let skillScore = 0;
+    if (m.instructorCompleted) {
+      skillScore = 1.0;
+      achievements.push({ skill: skillName, type: 'instructor', label: `Verified instructor with completed learning track in ${skillName}` });
+    } else if (m.learnerCompleted) {
+      skillScore = 0.85;
+      achievements.push({ skill: skillName, type: 'graduate', label: `Completed verified learning track in ${skillName}` });
+    } else if (m.practicalPassed) {
+      skillScore = 0.70;
+      achievements.push({ skill: skillName, type: 'practical', label: `Passed evaluated practical assessment in ${skillName}` });
+    }
+
+    totalScore += skillScore;
+  }
+
+  const score = norm(totalScore, matchedSkills.length);
+  return { score, achievements };
 }
 
 /**
@@ -196,9 +385,14 @@ function buildReasons({
   totalRatings,
   endorsementCount,
   availOverlap,
+  levelDetails = [],
+  trackAchievements = [],
+  reliabilityScore = 0.70,
+  completedSwaps = 0,
 }) {
   const reasons = [];
 
+  // 1. Forward match & verification
   if (forwardMatched.length > 0) {
     const verified = forwardMatched.filter(s => verifiedMatchedSkills.includes(s.toLowerCase()));
     const plain    = forwardMatched.filter(s => !verifiedMatchedSkills.includes(s.toLowerCase()));
@@ -208,10 +402,37 @@ function buildReasons({
       reasons.push(`Offers ${plain.join(', ')} — matching your learning goals`);
   }
 
+  // 2. Reverse match
   if (reverseMatched.length > 0) {
     reasons.push(`Wants ${reverseMatched.join(', ')} — skills you can teach`);
   }
 
+  // 3. Level fit
+  for (const d of levelDetails) {
+    if (d.learnerLevel) {
+      const tutorRank = LEVEL_VALUES[normalizeLevel(d.tutorLevel)] || 1;
+      const learnerRank = LEVEL_VALUES[normalizeLevel(d.learnerLevel)] || 1;
+      if (tutorRank > learnerRank) {
+        reasons.push(`Tutor (${d.tutorLevel}) exceeds your requested level in ${d.skill}`);
+      } else if (tutorRank === learnerRank) {
+        reasons.push(`Matches your requested ${d.tutorLevel} level in ${d.skill}`);
+      }
+    } else if (normalizeLevel(d.tutorLevel) === 'advanced') {
+      reasons.push(`Advanced tutor in ${d.skill}`);
+    }
+  }
+
+  // 4. Learning track mastery
+  for (const ach of trackAchievements) {
+    reasons.push(ach.label);
+  }
+
+  // 5. Exchange reliability
+  if (completedSwaps >= 1 && reliabilityScore >= 0.80) {
+    reasons.push(`High exchange completion record (${Math.round(reliabilityScore * 100)}% reliability)`);
+  }
+
+  // 6. Rating
   if (totalRatings >= 3) {
     const display = (bayesianRating * 4 + 1).toFixed(1); // reverse-normalise for display
     reasons.push(`⭐ Rated ${display}/5 across ${totalRatings} sessions`);
@@ -219,10 +440,12 @@ function buildReasons({
     reasons.push(`⭐ ${totalRatings} session rating(s) so far`);
   }
 
+  // 7. Endorsements
   if (endorsementCount > 0) {
     reasons.push(`${endorsementCount} peer endorsement${endorsementCount > 1 ? 's' : ''} on matched skills`);
   }
 
+  // 8. Schedule
   if (availOverlap === true) {
     reasons.push('⏰ Schedule overlaps with yours');
   }
@@ -288,13 +511,12 @@ async function buildRecommendations(currentUser, limit = 20) {
   // ── 3. Batch-fetch supporting data for ALL candidates at once ──────────────
   const candidateIds = candidates.map(c => c._id);
 
-  // Admin-verified SkillVerification records for matched candidates
+  // A. Admin-verified SkillVerification records for matched candidates
   const verifications = await SkillVerification.find({
     user:   { $in: candidateIds },
     status: 'verified',
   }).select('user skillName');
 
-  // Group verifications by userId → Set of verified skill names (lowercase)
   const verifiedMap = {};
   for (const v of verifications) {
     const uid = v.user.toString();
@@ -302,12 +524,11 @@ async function buildRecommendations(currentUser, limit = 20) {
     verifiedMap[uid].add(v.skillName.trim().toLowerCase());
   }
 
-  // Endorsements on candidates received from any user (scoped to matched skills)
+  // B. Endorsements on candidates received from any user (scoped to matched skills)
   const endorsements = await Endorsement.find({
     recipient: { $in: candidateIds },
   }).select('recipient skillName');
 
-  // Group endorsements: uid → { skillLow: count }
   const endorseMap = {};
   for (const e of endorsements) {
     const uid = e.recipient.toString();
@@ -316,11 +537,39 @@ async function buildRecommendations(currentUser, limit = 20) {
     endorseMap[uid][skill] = (endorseMap[uid][skill] || 0) + 1;
   }
 
+  // C. Learning tracks for candidate mastery (batched in a single query)
+  const candidateTracks = await LearningTrack.find({
+    $and: [
+      {
+        $or: [
+          { instructor: { $in: candidateIds } },
+          { learner:    { $in: candidateIds } },
+        ],
+      },
+      {
+        $or: [
+          { status: 'completed' },
+          { 'assessments.evaluationStatus': 'evaluated', 'assessments.passed': true },
+        ],
+      },
+    ],
+  }).select('instructor learner skillName status assessments.type assessments.evaluationStatus assessments.passed');
+
+  const trackMasteryMap = buildTrackMasteryMap(candidateTracks, candidateIds);
+
+  // D. Exchange reliability for candidates (batched in a single query via reliabilityService)
+  let reliabilityMap = new Map();
+  try {
+    reliabilityMap = await getBatchExchangeReliability(candidateIds);
+  } catch (err) {
+    console.error('[Recommendations] Reliability fetch error, using neutral priors:', err.message);
+  }
+
   // ── 4. Score each candidate ────────────────────────────────────────────────
   const scored = [];
 
   for (const candidate of candidates) {
-    const cid          = candidate._id.toString();
+    const cid             = candidate._id.toString();
     const theirOfferedLow = skillNames(candidate.skillsOffered);
     const theirWanted     = candidate.skillsWanted || [];
 
@@ -332,6 +581,16 @@ async function buildRecommendations(currentUser, limit = 20) {
 
     // Skip candidates with zero signal in both directions
     if (fwd.score === 0 && rev.score === 0) continue;
+
+    // Level compatibility
+    const levelFit = computeCandidateLevelFit(myWanted, candidate.skillsOffered, fwd.matched);
+
+    // Learning track mastery
+    const trackMastery = scoreTrackMastery(trackMasteryMap[cid], fwd.matched);
+
+    // Exchange reliability
+    const relData = reliabilityMap.get(cid) || { score: 0.70, completedCount: 0, failedCount: 0 };
+    const relScore = typeof relData.score === 'number' ? relData.score : 0.70;
 
     // Verification: fraction of forward-matched skills that are admin-verified
     const verifiedSet     = verifiedMap[cid] || new Set();
@@ -358,29 +617,35 @@ async function buildRecommendations(currentUser, limit = 20) {
       candidate.availabilitySlots
     );
 
-    // Category affinity
+    // Category affinity (retained for backward compatibility)
     const catScore = categoryAffinityScore(myWanted, candidate.skillsOffered, fwd.matched);
 
     // ── Final weighted score (0–100) ─────────────────────────────────────────
     const finalScore = Math.round(
-      fwd.score        * WEIGHTS.forward      +
-      rev.score        * WEIGHTS.reverse      +
-      verifyScore      * WEIGHTS.verification +
-      ratingScore      * WEIGHTS.rating       +
-      endorseScore     * WEIGHTS.endorsement  +
-      availScore       * WEIGHTS.availability +
-      catScore         * WEIGHTS.category
+      fwd.score          * WEIGHTS.forward      +
+      levelFit.score     * WEIGHTS.levelFit     +
+      rev.score          * WEIGHTS.reverse      +
+      verifyScore        * WEIGHTS.verification +
+      relScore           * WEIGHTS.reliability  +
+      ratingScore        * WEIGHTS.rating       +
+      trackMastery.score * WEIGHTS.trackMastery +
+      endorseScore       * WEIGHTS.endorsement  +
+      availScore         * WEIGHTS.availability
     );
 
     // ── Reason strings ────────────────────────────────────────────────────────
     const reasons = buildReasons({
-      forwardMatched:       fwd.matched,
-      reverseMatched:       rev.matched,
+      forwardMatched:        fwd.matched,
+      reverseMatched:        rev.matched,
       verifiedMatchedSkills: [...verifiedSet],
-      bayesianRating:       ratingScore,
-      totalRatings:         candidate.totalRatings || 0,
-      endorsementCount:     endorseCount,
+      bayesianRating:        ratingScore,
+      totalRatings:          candidate.totalRatings || 0,
+      endorsementCount:      endorseCount,
       availOverlap,
+      levelDetails:          levelFit.details,
+      trackAchievements:     trackMastery.achievements,
+      reliabilityScore:      relScore,
+      completedSwaps:        relData.completedCount || 0,
     });
 
     scored.push({
@@ -397,13 +662,16 @@ async function buildRecommendations(currentUser, limit = 20) {
       },
       score: Math.min(100, Math.max(0, finalScore)),
       scoreBreakdown: {
-        forwardMatch:     Math.round(fwd.score        * WEIGHTS.forward),
-        reverseMatch:     Math.round(rev.score        * WEIGHTS.reverse),
-        verificationBoost:Math.round(verifyScore      * WEIGHTS.verification),
-        ratingScore:      Math.round(ratingScore      * WEIGHTS.rating),
-        endorsementScore: Math.round(endorseScore     * WEIGHTS.endorsement),
-        availabilityScore:Math.round(availScore       * WEIGHTS.availability),
-        categoryScore:    Math.round(catScore         * WEIGHTS.category),
+        forwardMatch:         Math.round(fwd.score          * WEIGHTS.forward),
+        levelFitScore:        Math.round(levelFit.score     * WEIGHTS.levelFit),
+        reverseMatch:         Math.round(rev.score          * WEIGHTS.reverse),
+        verificationBoost:    Math.round(verifyScore        * WEIGHTS.verification),
+        exchangeReliability:  Math.round(relScore           * WEIGHTS.reliability),
+        ratingScore:          Math.round(ratingScore        * WEIGHTS.rating),
+        learningTrackMastery: Math.round(trackMastery.score * WEIGHTS.trackMastery),
+        endorsementScore:     Math.round(endorseScore       * WEIGHTS.endorsement),
+        availabilityScore:    Math.round(availScore         * WEIGHTS.availability),
+        categoryScore:        Math.round(catScore           * WEIGHTS.category),
       },
       reasons,
       matchedWants:     fwd.matched,
@@ -582,3 +850,32 @@ exports.getSkillSuggestions = async (req, res) => {
     return res.status(500).json({ message: 'Server error', error: err.message });
   }
 };
+
+/**
+ * GET /api/recommendations/circular
+ * Returns up to 5 ranked 3-way circular skill exchange cycles for the authenticated user.
+ */
+exports.getCircularRecommendations = async (req, res) => {
+  try {
+    const currentUser = await User.findById(req.userId).select(
+      'name bio skillsOffered skillsWanted availabilitySlots blockedUsers averageRating totalRatings'
+    );
+    if (!currentUser) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const recommendations = await findCircularCycles(currentUser, { limit: 5 });
+    return res.status(200).json(recommendations);
+  } catch (err) {
+    console.error('[Recommendations] Circular error:', err.message);
+    return res.status(500).json({ message: 'Server error', error: err.message });
+  }
+};
+
+// ─── Exported Helpers for Testing ─────────────────────────────────────────────
+exports.computeSkillLevelCompatibility = computeSkillLevelCompatibility;
+exports.computeCandidateLevelFit       = computeCandidateLevelFit;
+exports.buildTrackMasteryMap           = buildTrackMasteryMap;
+exports.scoreTrackMastery              = scoreTrackMastery;
+exports.WEIGHTS                        = WEIGHTS;
+exports.buildRecommendations           = buildRecommendations;

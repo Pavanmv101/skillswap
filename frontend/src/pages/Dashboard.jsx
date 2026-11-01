@@ -241,7 +241,7 @@ export default function Dashboard() {
                       </div>
                       {s.scheduledAt && (
                         <div className="session-time">
-                          📅 Scheduled: {new Date(s.scheduledAt).toLocaleString()}
+                          📅 Scheduled: {new Date(s.scheduledAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short', timeZoneName: 'short' })}
                         </div>
                       )}
                     </div>

@@ -20,13 +20,18 @@ const endorsementRoutes = require('./routes/endorsementRoutes');
 const learningRoutes = require('./routes/learningRoutes');
 const cronRoutes = require('./routes/cronRoutes');
 const recommendationRoutes = require('./routes/recommendationRoutes');
+const circularRoutes = require('./routes/circularRoutes');
 
 // Import notification and reminder services
 const { setIO } = require('./services/notificationService');
 const { initReminderScheduler, stopReminderScheduler } = require('./services/reminderService');
+const { initOutboxDispatcher, stopOutboxDispatcher } = require('./services/outboxDispatcher');
 
 const app = express();
 const server = http.createServer(app);
+
+// Trust the first front-facing reverse proxy (e.g. Render, Vercel) safely
+app.set('trust proxy', 1);
 
 // ── Production-Grade Trusted CORS Configuration ───────────────────────────
 const localDevOrigins = new Set([
@@ -198,11 +203,15 @@ app.use('/api/endorsements', endorsementRoutes);
 app.use('/api/learning', learningRoutes);
 app.use('/api/cron', cronRoutes);
 app.use('/api/recommendations', recommendationRoutes);
+app.use('/api/circular', circularRoutes);
 
-// Centralized error handling middleware (handles CORS rejection with 403 Forbidden)
+// Centralized error handling middleware (handles CORS rejection with 403, body-parser syntax errors with 400)
 app.use((err, req, res, next) => {
   if (err && err.message && err.message.includes('CORS policy')) {
     return res.status(403).json({ message: err.message });
+  }
+  if (err && (err.status === 400 || err.statusCode === 400)) {
+    return res.status(400).json({ message: 'Invalid JSON request payload' });
   }
   console.error('[Server Error]', err);
   res.status(500).json({
@@ -211,7 +220,43 @@ app.use((err, req, res, next) => {
   });
 });
 
+// ── In-Memory Socket Event Rate Limiting ──────────────────────────────────
+/**
+ * In-memory sliding-window event rate limiter scoped per socket connection.
+ * Automatically deallocated when the socket disconnects.
+ *
+ * @param {import('socket.io').Socket} socket
+ * @param {string} eventName
+ * @param {number} maxEvents
+ * @param {number} windowMs
+ * @returns {boolean} true if allowed, false if limit exceeded
+ */
+function checkSocketRateLimit(socket, eventName, maxEvents, windowMs) {
+  if (!socket) return false;
+  if (!socket._rateLimiters) {
+    socket._rateLimiters = new Map();
+  }
+
+  const now = Date.now();
+  let tracker = socket._rateLimiters.get(eventName);
+
+  if (!tracker || now - tracker.windowStart > windowMs) {
+    tracker = { count: 1, windowStart: now };
+    socket._rateLimiters.set(eventName, tracker);
+    return true;
+  }
+
+  tracker.count++;
+  if (tracker.count > maxEvents) {
+    return false;
+  }
+
+  return true;
+}
+
 // Real-time Event Handlers
+const SwapRequest = require('./models/SwapRequest');
+
 io.on('connection', (socket) => {
   console.log(`[Socket.io] Socket connected: ${socket.id}`);
 
@@ -235,37 +280,109 @@ io.on('connection', (socket) => {
     }
   });
 
-  // ─── WebRTC P2P Signaling ──────────────────────────────────
-  // User joins a video room
-  socket.on('join-room', ({ roomId, userName }) => {
-    socket.join(roomId);
-    console.log(`User ${userName} (${socket.id}) joined video room: ${roomId}`);
+  // ─── WebRTC P2P Signaling with Centralized Authorization & Throttling ───
+  // User joins a video room (Rate-limited to 15 per 60s per socket)
+  socket.on('join-room', async ({ roomId, userName }) => {
+    try {
+      // 0. Enforce rate limiting per socket
+      if (!checkSocketRateLimit(socket, 'join-room', 15, 60000)) {
+        return socket.emit('room-error', { message: 'Too many join-room requests, please slow down' });
+      }
 
-    socket.to(roomId).emit('user-joined', {
-      socketId: socket.id,
-      userName: userName || 'Peer',
-    });
+      // 1. Validate roomId format and non-empty value
+      if (!roomId || typeof roomId !== 'string' || !roomId.trim()) {
+        return socket.emit('room-error', { message: 'Invalid or missing room ID' });
+      }
+
+      const cleanRoomId = roomId.trim();
+
+      // 2. Require authenticated socket.userId
+      if (!socket.userId) {
+        return socket.emit('room-error', { message: 'Authentication required to join video room' });
+      }
+
+      // 3. Find the corresponding SwapRequest using roomId (authoritative for bilateral and circular child swaps)
+      const swap = await SwapRequest.findOne({ roomId: cleanRoomId })
+        .select('fromUser toUser status')
+        .lean();
+
+      if (!swap) {
+        return socket.emit('room-error', { message: 'Video room not found' });
+      }
+
+      // 4. Verify the room belongs to a valid accepted or completed swap
+      if (swap.status !== 'accepted' && swap.status !== 'completed') {
+        return socket.emit('room-error', { message: `Cannot join video session: swap is ${swap.status}` });
+      }
+
+      // 5. Verify authenticated user equals fromUser or toUser
+      const currentUserIdStr = socket.userId.toString();
+      const isAuthorized =
+        swap.fromUser.toString() === currentUserIdStr ||
+        swap.toUser.toString() === currentUserIdStr;
+
+      // 6. Reject observers, third circular participants, and unrelated users
+      if (!isAuthorized) {
+        return socket.emit('room-error', { message: 'Forbidden: You are not an authorized participant in this session' });
+      }
+
+      // 7. Only then execute socket.join(cleanRoomId)
+      socket.join(cleanRoomId);
+      console.log(`[Socket.io] User ${userName || 'Peer'} (${socket.userId}) authorized and joined video room: ${cleanRoomId}`);
+
+      socket.to(cleanRoomId).emit('user-joined', {
+        socketId: socket.id,
+        userName: userName || 'Peer',
+      });
+    } catch (err) {
+      console.error('[Socket.io] join-room error:', err.message);
+      socket.emit('room-error', { message: 'Internal server error while joining video room' });
+    }
   });
 
-  // Relay WebRTC SDP Offer
+  // Relay WebRTC SDP Offer (Restricted to authenticated room members, max 15 per 60s)
   socket.on('webrtc-offer', ({ roomId, sdp }) => {
-    socket.to(roomId).emit('webrtc-offer', {
+    if (!checkSocketRateLimit(socket, 'webrtc-offer', 15, 60000)) {
+      return socket.emit('room-error', { message: 'Signaling offer rate limit exceeded' });
+    }
+    if (!socket.userId || !roomId || typeof roomId !== 'string' || !sdp) return;
+    const cleanRoomId = roomId.trim();
+    if (!socket.rooms.has(cleanRoomId)) {
+      return socket.emit('room-error', { message: 'Forbidden: Cannot send offer to unjoined room' });
+    }
+    socket.to(cleanRoomId).emit('webrtc-offer', {
       sdp,
       senderId: socket.id,
     });
   });
 
-  // Relay WebRTC SDP Answer
+  // Relay WebRTC SDP Answer (Restricted to authenticated room members, max 15 per 60s)
   socket.on('webrtc-answer', ({ roomId, sdp }) => {
-    socket.to(roomId).emit('webrtc-answer', {
+    if (!checkSocketRateLimit(socket, 'webrtc-answer', 15, 60000)) {
+      return socket.emit('room-error', { message: 'Signaling answer rate limit exceeded' });
+    }
+    if (!socket.userId || !roomId || typeof roomId !== 'string' || !sdp) return;
+    const cleanRoomId = roomId.trim();
+    if (!socket.rooms.has(cleanRoomId)) {
+      return socket.emit('room-error', { message: 'Forbidden: Cannot send answer to unjoined room' });
+    }
+    socket.to(cleanRoomId).emit('webrtc-answer', {
       sdp,
       senderId: socket.id,
     });
   });
 
-  // Relay ICE Candidate
+  // Relay ICE Candidate (Restricted to authenticated room members, max 120 per 60s)
   socket.on('webrtc-ice-candidate', ({ roomId, candidate }) => {
-    socket.to(roomId).emit('webrtc-ice-candidate', {
+    if (!checkSocketRateLimit(socket, 'webrtc-ice-candidate', 120, 60000)) {
+      return socket.emit('room-error', { message: 'ICE candidate rate limit exceeded' });
+    }
+    if (!socket.userId || !roomId || typeof roomId !== 'string' || !candidate) return;
+    const cleanRoomId = roomId.trim();
+    if (!socket.rooms.has(cleanRoomId)) {
+      return socket.emit('room-error', { message: 'Forbidden: Cannot send ICE candidate to unjoined room' });
+    }
+    socket.to(cleanRoomId).emit('webrtc-ice-candidate', {
       candidate,
       senderId: socket.id,
     });
@@ -273,8 +390,12 @@ io.on('connection', (socket) => {
 
   // Peer leaves room explicitly
   socket.on('leave-room', ({ roomId }) => {
-    socket.leave(roomId);
-    socket.to(roomId).emit('user-left');
+    if (!roomId || typeof roomId !== 'string') return;
+    const cleanRoomId = roomId.trim();
+    if (socket.rooms.has(cleanRoomId)) {
+      socket.leave(cleanRoomId);
+      socket.to(cleanRoomId).emit('user-left');
+    }
   });
 
   socket.on('disconnecting', () => {
@@ -286,6 +407,10 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
+    if (socket._rateLimiters) {
+      socket._rateLimiters.clear();
+      socket._rateLimiters = null;
+    }
     console.log(`[Socket.io] Socket disconnected: ${socket.id}`);
   });
 });
@@ -293,8 +418,9 @@ io.on('connection', (socket) => {
 const PORT = process.env.PORT || 5001;
 
 if (require.main === module) {
-  // Initialize background session reminder scheduler
+  // Initialize background session reminder scheduler and transactional outbox dispatcher
   initReminderScheduler();
+  initOutboxDispatcher(io);
 
   server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
@@ -321,11 +447,18 @@ const gracefulShutdown = async (signal = 'SIGTERM') => {
 
   let hasError = false;
 
-  // 1. Stop background reminder scheduler
+  // 1. Stop background reminder scheduler and outbox dispatcher
   try {
     stopReminderScheduler();
   } catch (schedErr) {
     console.error('[Server] Error stopping reminder scheduler:', schedErr.message);
+    hasError = true;
+  }
+
+  try {
+    await stopOutboxDispatcher();
+  } catch (outboxErr) {
+    console.error('[Server] Error stopping outbox dispatcher:', outboxErr.message);
     hasError = true;
   }
 
@@ -401,4 +534,5 @@ module.exports = {
   io,
   isAllowedOrigin,
   gracefulShutdown,
+  checkSocketRateLimit,
 };

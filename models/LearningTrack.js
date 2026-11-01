@@ -134,5 +134,7 @@ const learningTrackSchema = new mongoose.Schema(
 
 // One track per learner per swap request (each swap has 2 tracks: Learner A and Learner B)
 learningTrackSchema.index({ swapRequest: 1, learner: 1 }, { unique: true });
+// Phase 6: compound index for instructor track mastery queries
+learningTrackSchema.index({ instructor: 1, skillName: 1, status: 1 });
 
 module.exports = mongoose.model('LearningTrack', learningTrackSchema);

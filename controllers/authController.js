@@ -10,13 +10,32 @@ function generateToken(userId) {
 // POST /api/auth/register
 exports.register = async (req, res) => {
   try {
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+      return res.status(400).json({ message: 'Invalid request body' });
+    }
+
     const { name, email, password } = req.body;
 
-    if (!name || !email || !password) {
+    if (name === undefined || email === undefined || password === undefined || name === null || email === null || password === null) {
       return res.status(400).json({ message: 'All fields are required' });
     }
 
-    const existingUser = await User.findOne({ email });
+    if (
+      typeof name !== 'string' ||
+      typeof email !== 'string' ||
+      typeof password !== 'string'
+    ) {
+      return res.status(400).json({ message: 'Name, email, and password must be strings' });
+    }
+
+    const cleanName = name.trim();
+    const cleanEmail = email.trim().toLowerCase();
+
+    if (!cleanName || !cleanEmail || !password) {
+      return res.status(400).json({ message: 'All fields are required' });
+    }
+
+    const existingUser = await User.findOne({ email: cleanEmail });
     if (existingUser) {
       return res.status(400).json({ message: 'Email already registered' });
     }
@@ -26,8 +45,8 @@ exports.register = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, salt);
 
     const user = await User.create({
-      name,
-      email,
+      name: cleanName,
+      email: cleanEmail,
       password: hashedPassword,
     });
 
@@ -45,9 +64,27 @@ exports.register = async (req, res) => {
 // POST /api/auth/login
 exports.login = async (req, res) => {
   try {
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+      return res.status(400).json({ message: 'Invalid request body' });
+    }
+
     const { email, password } = req.body;
 
-    const user = await User.findOne({ email });
+    if (email === undefined || password === undefined || email === null || password === null) {
+      return res.status(400).json({ message: 'Email and password are required' });
+    }
+
+    if (typeof email !== 'string' || typeof password !== 'string') {
+      return res.status(400).json({ message: 'Email and password must be strings' });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+
+    if (!cleanEmail || !password) {
+      return res.status(400).json({ message: 'Invalid email or password' });
+    }
+
+    const user = await User.findOne({ email: cleanEmail });
     if (!user) {
       return res.status(400).json({ message: 'Invalid email or password' });
     }
@@ -72,6 +109,10 @@ exports.login = async (req, res) => {
 // Safely seeds the demo student and admin accounts if they do not already exist
 exports.seedDemoAccounts = async (req, res) => {
   try {
+    if (req.body && (typeof req.body !== 'object' || Array.isArray(req.body))) {
+      return res.status(400).json({ message: 'Invalid request body' });
+    }
+
     const priya = await User.findOne({ email: 'priya@skillswap.com' });
     if (priya) {
       return res.status(200).json({
