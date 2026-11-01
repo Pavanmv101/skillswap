@@ -34,6 +34,7 @@ const Rating                = require('../models/Rating');
 const SkillVerification      = require('../models/SkillVerification');
 const LearningTrack         = require('../models/LearningTrack');
 const { getBatchExchangeReliability } = require('../services/reliabilityService');
+const { findCircularCycles }  = require('../services/cycleDetectionService');
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -846,6 +847,27 @@ exports.getSkillSuggestions = async (req, res) => {
     });
   } catch (err) {
     console.error('[Recommendations] Skills error:', err.message);
+    return res.status(500).json({ message: 'Server error', error: err.message });
+  }
+};
+
+/**
+ * GET /api/recommendations/circular
+ * Returns up to 5 ranked 3-way circular skill exchange cycles for the authenticated user.
+ */
+exports.getCircularRecommendations = async (req, res) => {
+  try {
+    const currentUser = await User.findById(req.userId).select(
+      'name bio skillsOffered skillsWanted availabilitySlots blockedUsers averageRating totalRatings'
+    );
+    if (!currentUser) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const recommendations = await findCircularCycles(currentUser, { limit: 5 });
+    return res.status(200).json(recommendations);
+  } catch (err) {
+    console.error('[Recommendations] Circular error:', err.message);
     return res.status(500).json({ message: 'Server error', error: err.message });
   }
 };
