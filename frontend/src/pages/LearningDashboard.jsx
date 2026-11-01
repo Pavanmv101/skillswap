@@ -395,7 +395,7 @@ export default function LearningDashboard() {
                     <span>Milestones: {approvedM}/{totalM}</span>
                     <strong>{t.overallProgress}%</strong>
                   </div>
-                  <div style={{ background: 'rgba(255,255,255,0.08)', borderRadius: 999, height: 8, overflow: 'hidden' }}>
+                  <div style={{ background: 'var(--surface-subtle, #f1f5f9)', border: '1px solid var(--border, #e2e8f0)', borderRadius: 999, height: 8, overflow: 'hidden' }}>
                     <div
                       style={{
                         background: t.overallProgress === 100 ? '#10b981' : 'var(--primary, #6366f1)',
@@ -439,14 +439,14 @@ export default function LearningDashboard() {
             </div>
 
             {/* Overall Progress Banner */}
-            <div style={{ background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: 8, marginBottom: '1.5rem', border: '1px solid var(--border-color)' }}>
+            <div style={{ background: 'var(--surface-subtle, #f8fafc)', padding: '1rem', borderRadius: 8, marginBottom: '1.5rem', border: '1px solid var(--border, #e2e8f0)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '.5rem' }}>
                 <span style={{ fontWeight: 600, fontSize: '.9rem' }}>Roadmap Progress</span>
                 <span style={{ fontWeight: 700, fontSize: '1.1rem', color: selectedTrack.overallProgress === 100 ? '#10b981' : '#6366f1' }}>
                   {selectedTrack.overallProgress}%
                 </span>
               </div>
-              <div style={{ background: 'rgba(255,255,255,0.08)', borderRadius: 999, height: 10, overflow: 'hidden' }}>
+              <div style={{ background: '#e2e8f0', borderRadius: 999, height: 10, overflow: 'hidden' }}>
                 <div
                   style={{
                     background: selectedTrack.overallProgress === 100 ? '#10b981' : 'var(--primary, #6366f1)',
@@ -481,7 +481,7 @@ export default function LearningDashboard() {
               ) : (
                 <div className="card-list">
                   {selectedTrack.milestones.map((m, idx) => (
-                    <div key={m._id} style={{ padding: '1rem', background: 'rgba(255,255,255,0.02)', borderRadius: 8, border: '1px solid var(--border-color)', marginBottom: '.75rem' }}>
+                    <div key={m._id} style={{ padding: '1rem', background: 'var(--surface-subtle, #f8fafc)', borderRadius: 8, border: '1px solid var(--border, #e2e8f0)', marginBottom: '.75rem' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '.5rem' }}>
                         <div>
                           <strong style={{ fontSize: '1rem' }}>
@@ -524,7 +524,7 @@ export default function LearningDashboard() {
 
                       {/* Feedback from instructor */}
                       {m.feedback && (
-                        <div style={{ marginTop: '.5rem', padding: '.5rem .75rem', background: 'rgba(255,255,255,0.03)', borderRadius: 6, fontSize: '.82rem' }}>
+                        <div style={{ marginTop: '.5rem', padding: '.5rem .75rem', background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: '.82rem' }}>
                           <strong>Instructor Feedback:</strong> {m.feedback}
                         </div>
                       )}
@@ -588,11 +588,11 @@ export default function LearningDashboard() {
                     const latestAttempt = a.attempts?.[a.attempts?.length - 1]
 
                     return (
-                      <div key={a._id} style={{ padding: '1rem', background: 'rgba(255,255,255,0.02)', borderRadius: 8, border: '1px solid var(--border-color)', marginBottom: '.75rem' }}>
+                      <div key={a._id} style={{ padding: '1rem', background: 'var(--surface-subtle, #f8fafc)', borderRadius: 8, border: '1px solid var(--border, #e2e8f0)', marginBottom: '.75rem' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                           <div>
                             <strong style={{ fontSize: '1rem' }}>{a.title}</strong>
-                            <span style={{ marginLeft: '.5rem', fontSize: '.75rem', padding: '2px 8px', borderRadius: 4, background: 'rgba(255,255,255,0.06)' }}>
+                            <span style={{ marginLeft: '.5rem', fontSize: '.75rem', padding: '2px 8px', borderRadius: 4, background: '#fff', border: '1px solid var(--border, #e2e8f0)' }}>
                               {a.type === 'quiz' ? 'Multiple-Choice Quiz' : 'Practical Project Task'}
                             </span>
                           </div>
@@ -652,7 +652,7 @@ export default function LearningDashboard() {
                             )}
 
                             {a.instructorFeedback && (
-                              <div style={{ width: '100%', padding: '.5rem', background: 'rgba(255,255,255,0.03)', borderRadius: 6, fontSize: '.82rem' }}>
+                              <div style={{ width: '100%', padding: '.5rem', background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: '.82rem' }}>
                                 <strong>Feedback:</strong> {a.instructorFeedback}
                               </div>
                             )}
@@ -874,7 +874,7 @@ export default function LearningDashboard() {
               <form onSubmit={handleSubmitQuiz}>
                 <div style={{ marginTop: '1rem' }}>
                   {activeQuiz.questions.map((q, qIndex) => (
-                    <div key={qIndex} style={{ marginBottom: '1.25rem', padding: '.85rem', background: 'rgba(255,255,255,0.02)', borderRadius: 8, border: '1px solid var(--border-color)' }}>
+                    <div key={qIndex} style={{ marginBottom: '1.25rem', padding: '.85rem', background: 'var(--surface-subtle, #f8fafc)', borderRadius: 8, border: '1px solid var(--border, #e2e8f0)' }}>
                       <strong style={{ fontSize: '.95rem' }}>
                         {qIndex + 1}. {q.question}
                       </strong>

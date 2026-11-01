@@ -3,7 +3,7 @@
  * Coloured tier badge for recommendation scores.
  * Tiers: Excellent (80+), Good (55–79), Fair (30–54), Low (<30)
  */
-export default function ScoreBadge({ score }) {
+export default function ScoreBadge({ score, className = '', style = {} }) {
   const s = Math.round(score ?? 0)
 
   let label, color, bg
@@ -27,24 +27,29 @@ export default function ScoreBadge({ score }) {
 
   return (
     <span
+      className={`score-badge ${className}`.trim()}
       style={{
         display:       'inline-flex',
         alignItems:    'center',
         gap:           '0.3rem',
-        padding:       '0.2rem 0.65rem',
+        padding:       '0.2rem 0.6rem',
         borderRadius:  '999px',
-        fontSize:      '0.78rem',
+        fontSize:      '0.76rem',
         fontWeight:    700,
         letterSpacing: '0.01em',
         color,
         background:    bg,
         border:        `1px solid ${color}33`,
-        whiteSpace:    'nowrap',
+        flexShrink:    0,
+        maxWidth:      '100%',
+        boxSizing:     'border-box',
+        ...style,
       }}
-      title={`Compatibility score: ${s}/100`}
+      title={`Compatibility score: ${s}/100 — ${label}`}
     >
-      <span style={{ fontSize: '0.7rem' }}>◉</span>
-      {s}% — {label}
+      <span style={{ fontSize: '0.65rem' }}>◉</span>
+      <span className="score-badge-pct">{s}%</span>
+      <span className="score-badge-label">— {label}</span>
     </span>
   )
 }

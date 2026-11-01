@@ -25,11 +25,17 @@ export default function RecommendationCard({ rec, mySlots = [], onRequestSwap })
   return (
     <div className="card peer-card">
       {/* Header row */}
-      <div className="peer-card-header">
+      <div className="peer-card-header" style={{ alignItems: 'flex-start' }}>
         <Avatar name={user.name} size={48} />
-        <div style={{ flex: 1 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <Link to={`/user/${user._id}`} className="card-name">{user.name}</Link>
+            <Link
+              to={`/user/${user._id}`}
+              className="card-name"
+              style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 'calc(100% - 110px)' }}
+            >
+              {user.name}
+            </Link>
             <ScoreBadge score={score} />
           </div>
           <Stars value={user.averageRating || 0} count={user.totalRatings} />
@@ -133,7 +139,7 @@ export default function RecommendationCard({ rec, mySlots = [], onRequestSwap })
       )}
 
       {/* Footer actions */}
-      <div className="peer-card-footer" style={{ display: 'flex', gap: '0.5rem', marginTop: '0.85rem' }}>
+      <div className="peer-card-footer" style={{ display: 'flex', gap: '0.5rem', marginTop: 'auto', paddingTop: '0.85rem' }}>
         {user.availabilitySlots?.length > 0 && (
           <button
             type="button"

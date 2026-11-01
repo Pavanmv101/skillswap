@@ -27,10 +27,12 @@ export default function CircularCycleCard({ cycle, currentUserId, onPropose }) {
   const participants = legs.map(l => l.teacher)
 
   return (
-    <div className="card" style={{ padding: '1.25rem' }}>
+    <div className="card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', height: '100%' }}>
       {/* ── Header: Score badge ── */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
-        <h4 style={{ margin: 0, fontSize: '0.95rem' }}>🔄 3-Way Circular Exchange</h4>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1rem' }}>
+        <h4 style={{ margin: 0, fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+          <span>🔄</span> 3-Way Circular Exchange
+        </h4>
         <ScoreBadge score={cycleScore} />
       </div>
 
@@ -173,7 +175,7 @@ export default function CircularCycleCard({ cycle, currentUserId, onPropose }) {
       )}
 
       {/* ── Propose button ── */}
-      <div style={{ marginTop: '1rem' }}>
+      <div style={{ marginTop: 'auto', paddingTop: '1rem' }}>
         <button
           type="button"
           className="btn btn-primary btn-block shadow-glow"
