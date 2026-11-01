@@ -579,7 +579,7 @@ async function runTests() {
     assert.strictEqual(countAfterSecond, countAfterFirst, 'Duplicate accept must NOT create duplicate outbox events');
   });
 
-  await test('CRITICAL LIFECYCLE BOUNDARY: Third participant acceptance marks allAccepted: true, status stays proposed, ZERO reservations, ZERO child swaps', async () => {
+  await test('Third participant acceptance executes atomic circular activation: allAccepted: true, status active, 3 reservations, 3 child swaps', async () => {
     const uA = await createTestUser({ name: 'Alice_Full' });
     const uB = await createTestUser({ name: 'Bob_Full' });
     const uC = await createTestUser({ name: 'Charlie_Full' });
@@ -598,13 +598,14 @@ async function runTests() {
     assert.strictEqual(resB.statusCode, 200);
     assert.strictEqual(resB.body.allAccepted, false);
 
-    // Charlie accepts (3rd participant)
+    // Charlie accepts (3rd participant -> triggers atomic activation)
     const reqC = { userId: uC._id.toString(), params: { id: cycleId } };
     const resC = mockRes();
     await acceptCircularInvitation(reqC, resC);
     assert.strictEqual(resC.statusCode, 200);
     assert.strictEqual(resC.body.allAccepted, true);
-    assert(resC.body.message.includes('ready for activation'));
+    assert.strictEqual(resC.body.activated, true);
+    assert(resC.body.message.includes('activated'));
 
     // Check database state
     const proposal = await CircularExchange.findById(cycleId);
@@ -612,21 +613,16 @@ async function runTests() {
     // 1. All 3 participants haveAccepted: true
     assert(proposal.participants.every(p => p.hasAccepted === true));
 
-    // 2. CRITICAL: status strictly remains 'proposed'
-    assert.strictEqual(proposal.status, 'proposed', 'Status must remain proposed until Substage 3.3 activation!');
+    // 2. Status transitioned to active
+    assert.strictEqual(proposal.status, 'active');
 
-    // 3. CRITICAL: ZERO reservations acquired for this cycle
+    // 3. Exactly 3 reservations acquired for this cycle
     const reservations = await ExchangeReservation.find({ exchangeId: cycleId });
-    assert.strictEqual(reservations.length, 0, 'No reservations must be acquired in Substage 3.2!');
+    assert.strictEqual(reservations.length, 3);
 
-    // 4. CRITICAL: ZERO child SwapRequests created
-    const childSwaps = await SwapRequest.find({
-      $or: [
-        { fromUser: { $in: [uA._id, uB._id, uC._id] } },
-        { toUser: { $in: [uA._id, uB._id, uC._id] } },
-      ],
-    });
-    assert.strictEqual(childSwaps.length, 0, 'No child SwapRequests must be created in Substage 3.2!');
+    // 4. Exactly 3 child SwapRequests created
+    const childSwaps = await SwapRequest.find({ circularExchange: cycleId });
+    assert.strictEqual(childSwaps.length, 3);
   });
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -891,6 +887,8 @@ async function runTests() {
   console.log('\n--- Teardown Test Data ---');
   await stopHttpServer();
   await CircularExchange.deleteMany({ _id: { $in: createdCycleIds } });
+  await ExchangeReservation.deleteMany({ exchangeId: { $in: createdCycleIds } });
+  await SwapRequest.deleteMany({ circularExchange: { $in: createdCycleIds } });
   await OutboxEvent.deleteMany({ _id: { $in: createdOutboxIds } });
   await User.deleteMany({ _id: { $in: createdUserIds } });
   console.log('  🧹 Teardown complete.');

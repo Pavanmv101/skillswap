@@ -176,6 +176,11 @@ const circularExchangeSchema = new mongoose.Schema(
       ref: 'User',
       default: null,
     },
+
+    activatedAt: {
+      type: Date,
+      default: null,
+    },
   },
   { timestamps: true }
 );

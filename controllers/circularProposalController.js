@@ -1,15 +1,19 @@
 /**
- * Phase 6 — Advanced Skill Exchange Algorithm (Step 3 - Substage 3.2)
+ * Phase 6 — Advanced Skill Exchange Algorithm (Step 3 - Substage 3.3)
  * controllers/circularProposalController.js
  *
- * Implements the Circular Three-Way Skill Exchange proposal lifecycle:
+ * Implements the Circular Three-Way Skill Exchange proposal & activation lifecycle:
  * - Propose a 3-way circular exchange with server-side validation & canonical hashing.
  * - Automatic initiator acceptance; pending status for the other two invitees.
  * - Authenticated listing and detail views strictly restricted to participants.
  * - Accept and decline actions with transactional outbox event creation.
  * - 72-hour lazy expiration and background sweeper preserving historical records.
- * - Strict lifecycle boundary: 3rd acceptance records decision and marks ready for activation
- *   WITHOUT acquiring reservations, creating child swaps, or setting status to active.
+ * - Substage 3.3 Atomic Circular Activation: 3rd acceptance triggers transactional activation:
+ *   - Participant conflict checking (assertNoAcceptedSwapConflicts)
+ *   - Atomic reservation acquisition (acquireReservations)
+ *   - Parent status transition to 'active' with activatedAt timestamp
+ *   - Generation of 3 child SwapRequest records linked to parent exchange and legs
+ *   - Transactional CIRCULAR_SWAP_ACTIVATED outbox events for all 3 participants
  */
 
 'use strict';
@@ -18,7 +22,16 @@ const mongoose = require('mongoose');
 const CircularExchange = require('../models/CircularExchange');
 const OutboxEvent = require('../models/OutboxEvent');
 const User = require('../models/User');
-const { withTransaction } = require('../services/reservationService');
+const SwapRequest = require('../models/SwapRequest');
+const ExchangeReservation = require('../models/ExchangeReservation');
+const {
+  withTransaction,
+  acquireReservations,
+  releaseReservations,
+  assertNoAcceptedSwapConflicts,
+  ReservationConflictError,
+  isTransactionSupported,
+} = require('../services/reservationService');
 
 const PROPOSAL_TTL_MS = 72 * 60 * 60 * 1000; // 72 hours
 
@@ -342,13 +355,14 @@ async function getCircularProposalById(req, res) {
  * PUT /api/circular/proposals/:id/accept
  * Accept an invitation to a circular skill exchange proposal.
  *
- * CRITICAL LIFECYCLE BOUNDARY:
- * When the 3rd participant accepts:
- * - Record acceptance.
- * - Keep status as 'proposed'.
- * - Do NOT acquire reservations.
- * - Do NOT create child SwapRequests.
- * - Do NOT mark exchange active.
+ * Substage 3.3 Atomic Activation:
+ * When the final participant accepts (all 3 participants accepted):
+ * - Revalidates activation preconditions and directed cycle structure.
+ * - Asserts no accepted bilateral swap conflicts across all 3 participants.
+ * - Atomically acquires 3 circular reservations (one per participant's teaching leg).
+ * - Generates exactly 3 child SwapRequests linked to parent circular exchange and leg.
+ * - Sets parent status to 'active', updates leg swap references, and records activatedAt.
+ * - Creates CIRCULAR_SWAP_ACTIVATED OutboxEvent records transactionally for all 3 participants.
  */
 async function acceptCircularInvitation(req, res) {
   try {
@@ -377,6 +391,20 @@ async function acceptCircularInvitation(req, res) {
         throw err;
       }
 
+      // Idempotency: If exchange is already active, return 200 without reactivation
+      if (proposal.status === 'active') {
+        result = {
+          statusCode: 200,
+          data: {
+            message: 'Circular exchange is already active',
+            proposal,
+            allAccepted: true,
+            activated: true,
+          },
+        };
+        return;
+      }
+
       // Check lazy expiration inside transaction
       const isExpired = await checkAndApplyLazyExpiration(proposal, session);
       if (isExpired || proposal.status === 'expired') {
@@ -392,64 +420,224 @@ async function acceptCircularInvitation(req, res) {
         throw err;
       }
 
-      // Idempotency check: Already accepted by this participant
-      if (participant.hasAccepted) {
-        const allAccepted = proposal.participants.every(p => p.hasAccepted === true);
+      const wasAlreadyAccepted = participant.hasAccepted;
+
+      // Record acceptance if not already recorded
+      if (!participant.hasAccepted) {
+        participant.hasAccepted = true;
+        participant.acceptedAt = new Date();
+        await proposal.save({ session });
+      }
+
+      const allAccepted = proposal.participants.every(p => p.hasAccepted === true);
+
+      // If not all 3 have accepted yet, this is a partial acceptance
+      if (!allAccepted) {
+        if (wasAlreadyAccepted) {
+          result = {
+            statusCode: 200,
+            data: {
+              message: 'Invitation already accepted',
+              proposal,
+              allAccepted: false,
+              activated: false,
+            },
+          };
+          return;
+        }
+
+        // Create OutboxEvent for the other two participants
+        const actor = await User.findById(req.userId).session(session).select('name');
+        const actorName = actor?.name || 'A participant';
+
+        const otherParticipants = proposal.participants
+          .filter(p => p.user.toString() !== req.userId.toString())
+          .map(p => p.user);
+
+        const outboxEvents = otherParticipants.map(recipientId => ({
+          aggregateType: 'circular_exchange',
+          aggregateId: proposal._id,
+          recipient: recipientId,
+          sender: req.userId,
+          type: 'CIRCULAR_SWAP_ACCEPTED_PARTIAL',
+          title: 'Circular Exchange Invitation Accepted',
+          message: `${actorName} accepted the circular skill exchange proposal.`,
+          status: 'pending',
+        }));
+
+        await OutboxEvent.insertMany(outboxEvents, { session });
+
         result = {
           statusCode: 200,
           data: {
-            message: 'Invitation already accepted',
+            message: 'Invitation accepted successfully.',
             proposal,
-            allAccepted,
+            allAccepted: false,
+            activated: false,
           },
         };
         return;
       }
 
-      // Record acceptance
-      participant.hasAccepted = true;
-      participant.acceptedAt = new Date();
+      // ── ATOMIC CIRCULAR ACTIVATION (All 3 participants have accepted) ──
 
-      await proposal.save({ session });
+      // 1. Validate activation preconditions
+      if (proposal.participants.length !== 3) {
+        throw new Error('Circular exchange must have exactly 3 participants for activation');
+      }
+      if (proposal.legs.length !== 3) {
+        throw new Error('Circular exchange must have exactly 3 directed legs for activation');
+      }
 
-      const allAccepted = proposal.participants.every(p => p.hasAccepted === true);
+      const participantIds = proposal.participants.map(p => p.user);
+      const canonicalResult = CircularExchange.validateAndCanonicalize(participantIds, proposal.legs);
+      if (!canonicalResult.valid) {
+        throw new Error('Circular exchange cycle validation failed');
+      }
 
-      // Create OutboxEvent for the other two participants
-      const actor = await User.findById(req.userId).session(session).select('name');
-      const actorName = actor?.name || 'A participant';
+      // 2. Protect all three participants: Check for active accepted bilateral swaps
+      await assertNoAcceptedSwapConflicts({
+        participantIds,
+        session,
+      });
 
-      const otherParticipants = proposal.participants
-        .filter(p => p.user.toString() !== req.userId.toString())
-        .map(p => p.user);
-
-      const outboxEvents = otherParticipants.map(recipientId => ({
-        aggregateType: 'circular_exchange',
-        aggregateId: proposal._id,
-        recipient: recipientId,
-        sender: req.userId,
-        type: 'CIRCULAR_SWAP_ACCEPTED_PARTIAL',
-        title: 'Circular Exchange Invitation Accepted',
-        message: `${actorName} accepted the circular skill exchange proposal.`,
-        status: 'pending',
+      // 3. Acquire exactly three circular reservations (one per participant's teaching leg)
+      const reservationsToAcquire = proposal.legs.map(leg => ({
+        participant: leg.teacher,
+        exchangeType: 'circular',
+        exchangeId: proposal._id,
+        skillBeingTaught: leg.skill,
       }));
 
-      await OutboxEvent.insertMany(outboxEvents, { session });
+      await acquireReservations({ reservations: reservationsToAcquire, session });
 
-      // Note: Status deliberately remains 'proposed'. No reservations or child swaps created here.
+      // 4. Atomic conditional transition: Only one concurrent worker can transition from proposed to active
+      const activatedDoc = await CircularExchange.findOneAndUpdate(
+        { _id: proposal._id, status: 'proposed' },
+        { $set: { status: 'active', activatedAt: new Date() } },
+        { returnDocument: 'after', session }
+      );
+
+      // If another concurrent request already activated this exchange, return cleanly without duplicating
+      if (!activatedDoc) {
+        const currentActive = await CircularExchange.findById(proposal._id).session(session);
+        result = {
+          statusCode: 200,
+          data: {
+            message: 'All participants accepted. Circular exchange successfully activated!',
+            proposal: currentActive || proposal,
+            allAccepted: true,
+            activated: true,
+          },
+        };
+        return;
+      }
+
+      // 5. Generate exactly three child SwapRequests (one per directed leg)
+      let childSwaps = await SwapRequest.find({ circularExchange: proposal._id }).session(session);
+
+      if (childSwaps.length < 3) {
+        if (childSwaps.length > 0) {
+          await SwapRequest.deleteMany({ circularExchange: proposal._id }).session(session);
+        }
+        childSwaps = [];
+        for (let i = 0; i < proposal.legs.length; i++) {
+          const leg = proposal.legs[i];
+          const childSwap = new SwapRequest({
+            fromUser: leg.teacher,
+            toUser: leg.learner,
+            offeredSkill: leg.skill,
+            wantedSkill: '[Circular Exchange]',
+            status: 'accepted',
+            roomId: `skillswap-circular-${proposal._id}-leg-${i}`,
+            circularExchange: proposal._id,
+            circularLegIndex: i,
+            compatibilityScore: proposal.cycleScore || 0,
+            compatibilityNote: `Child leg ${i} of 3-way circular skill exchange (${proposal._id})`,
+          });
+          await childSwap.save({ session });
+          childSwaps.push(childSwap);
+        }
+      }
+
+      // Update parent legs with references and active status
+      for (let i = 0; i < activatedDoc.legs.length; i++) {
+        const matchingChild = childSwaps.find(cs => cs.circularLegIndex === i) || childSwaps[i];
+        activatedDoc.legs[i].swapRequest = matchingChild._id;
+        activatedDoc.legs[i].status = 'active';
+        activatedDoc.legs[i].roomId = matchingChild.roomId;
+      }
+      await activatedDoc.save({ session });
+
+      // 6. Transactional outbox events for all 3 participants
+      const existingActivationEvents = await OutboxEvent.find({
+        aggregateType: 'circular_exchange',
+        aggregateId: proposal._id,
+        type: 'CIRCULAR_SWAP_ACTIVATED',
+      }).session(session);
+
+      if (existingActivationEvents.length === 0) {
+        const activationEvents = activatedDoc.participants.map(p => {
+          const teachingLeg = activatedDoc.legs.find(l => l.teacher.toString() === p.user.toString());
+          return {
+            aggregateType: 'circular_exchange',
+            aggregateId: activatedDoc._id,
+            recipient: p.user,
+            sender: req.userId,
+            type: 'CIRCULAR_SWAP_ACTIVATED',
+            title: 'Circular Skill Exchange Activated! 🚀',
+            message: 'All 3 participants have accepted! Your 3-way circular skill exchange is now active.',
+            relatedSwap: teachingLeg?.swapRequest || null,
+            status: 'pending',
+          };
+        });
+        await OutboxEvent.insertMany(activationEvents, { session });
+      }
+
       result = {
         statusCode: 200,
         data: {
-          message: allAccepted
-            ? 'All participants have accepted. Circular exchange is ready for activation.'
-            : 'Invitation accepted successfully.',
-          proposal,
-          allAccepted,
+          message: 'All participants accepted. Circular exchange successfully activated!',
+          proposal: activatedDoc,
+          allAccepted: true,
+          activated: true,
         },
       };
     });
 
     return res.status(result.statusCode).json(result.data);
   } catch (err) {
+    // If standalone fallback mode without real transactions, perform compensating cleanup if an error occurred after partial writes
+    if (!isTransactionSupported() && req.params && req.params.id) {
+      try {
+        await CircularExchange.updateOne(
+          { _id: req.params.id, status: 'active' },
+          {
+            $set: {
+              status: 'proposed',
+              activatedAt: null,
+              'legs.$[].status': 'pending',
+              'legs.$[].swapRequest': null,
+              'legs.$[].roomId': null,
+            },
+          }
+        );
+        await SwapRequest.deleteMany({ circularExchange: req.params.id });
+        await releaseReservations({ exchangeId: req.params.id });
+      } catch (_) {}
+    }
+
+    if (err.name === 'ReservationConflictError' || err.code === 'RESERVATION_CONFLICT') {
+      return res.status(409).json({
+        message: err.message,
+        details: err.details,
+      });
+    }
+    if (err.code === 11000) {
+      return res.status(409).json({
+        message: 'Conflict: One or more participants already hold an active reservation',
+      });
+    }
     if (err.status) {
       return res.status(err.status).json({ message: err.message });
     }

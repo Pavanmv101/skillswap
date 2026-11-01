@@ -271,10 +271,16 @@ async function getUserExchangeReliability(userId, options = {}) {
 
   const userObjId = new mongoose.Types.ObjectId(userId);
 
-  // Single query for this user's swaps
+  // Single query for this user's swaps.
+  // Phase 6 circular reliability rule:
+  // For circular child swaps, only the teacher (fromUser) is evaluated for reliability.
+  // The learner (toUser) does not receive an additional completion/failure count for that leg.
   const swaps = await SwapRequest.find({
-    $or: [{ fromUser: userObjId }, { toUser: userObjId }],
-  }).select('fromUser toUser status scheduledAt createdAt updatedAt');
+    $or: [
+      { fromUser: userObjId },
+      { toUser: userObjId, circularExchange: null },
+    ],
+  }).select('fromUser toUser status scheduledAt createdAt updatedAt circularExchange');
 
   return processUserSwaps(swaps, options);
 }
@@ -320,7 +326,7 @@ async function getBatchExchangeReliability(userIds = [], options = {}) {
       { fromUser: { $in: validObjIds } },
       { toUser:   { $in: validObjIds } },
     ],
-  }).select('fromUser toUser status scheduledAt createdAt updatedAt');
+  }).select('fromUser toUser status scheduledAt createdAt updatedAt circularExchange');
 
   // Group swaps in memory by participant ID
   const userSwapsMap = new Map();
@@ -336,7 +342,13 @@ async function getBatchExchangeReliability(userIds = [], options = {}) {
       userSwapsMap.get(fromStr).push(swap);
     }
     if (toStr && toStr !== fromStr && userSwapsMap.has(toStr)) {
-      userSwapsMap.get(toStr).push(swap);
+      // Phase 6 circular reliability rule:
+      // For bilateral swaps, toUser is an equal barter participant and is evaluated.
+      // For circular child swaps, only the teacher (fromUser) is evaluated for that leg;
+      // the learner (toUser) does not receive an additional count for that leg.
+      if (!swap.circularExchange) {
+        userSwapsMap.get(toStr).push(swap);
+      }
     }
   }
 

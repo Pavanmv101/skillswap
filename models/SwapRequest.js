@@ -26,6 +26,18 @@ const swapRequestSchema = new mongoose.Schema(
     // Compatibility score calculated at request-creation time
     compatibilityScore: { type: Number, default: 0 },
     compatibilityNote:  { type: String, default: '' },
+
+    // Phase 6 Step 3: Link child swap to parent circular exchange
+    circularExchange: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'CircularExchange',
+      default: null,
+      index: true,
+    },
+    circularLegIndex: {
+      type: Number,
+      default: null,
+    },
   },
   { timestamps: true }
 );
