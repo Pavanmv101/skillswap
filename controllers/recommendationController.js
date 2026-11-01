@@ -557,7 +557,7 @@ async function buildRecommendations(currentUser, limit = 20) {
   const trackMasteryMap = buildTrackMasteryMap(candidateTracks, candidateIds);
 
   // D. Exchange reliability for candidates (batched in a single query via reliabilityService)
-  let reliabilityMap = {};
+  let reliabilityMap = new Map();
   try {
     reliabilityMap = await getBatchExchangeReliability(candidateIds);
   } catch (err) {
@@ -588,7 +588,7 @@ async function buildRecommendations(currentUser, limit = 20) {
     const trackMastery = scoreTrackMastery(trackMasteryMap[cid], fwd.matched);
 
     // Exchange reliability
-    const relData = reliabilityMap[cid] || { score: 0.70, completedCount: 0, failedCount: 0 };
+    const relData = reliabilityMap.get(cid) || { score: 0.70, completedCount: 0, failedCount: 0 };
     const relScore = typeof relData.score === 'number' ? relData.score : 0.70;
 
     // Verification: fraction of forward-matched skills that are admin-verified

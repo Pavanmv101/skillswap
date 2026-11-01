@@ -380,6 +380,15 @@ async function runTests() {
     });
     createdSwapIds.push(dummySwapA._id);
 
+    const dummySwapA2 = await SwapRequest.create({
+      fromUser: candidateA._id,
+      toUser: dummyPeer._id,
+      offeredSkill: SKILL_TARGET,
+      wantedSkill: 'General',
+      status: 'completed',
+    });
+    createdSwapIds.push(dummySwapA2._id);
+
     const trackA = await LearningTrack.create({
       swapRequest: dummySwapA._id,
       instructor: candidateA._id,
@@ -458,6 +467,53 @@ async function runTests() {
       // Candidate A has completed track as instructor
       const hasTrackReason = recA.reasons.some(r => r.includes('Verified instructor with completed learning track'));
       assert(hasTrackReason, `Expected track mastery reason in: ${JSON.stringify(recA.reasons)}`);
+    });
+
+    await test('End-to-End: Candidate with completed exchanges receives higher reliability score than neutral baseline (Map.get integration)', async () => {
+      const recs = await buildRecommendations(currentUser, 10);
+      const recA = recs.find(r => r.user._id.toString() === candidateA._id.toString());
+      const recB = recs.find(r => r.user._id.toString() === candidateB._id.toString());
+
+      // Candidate A has 2 completed swaps: score = (2 + 2.1) / 5 = 0.82 -> Math.round(0.82 * 15) = 12 pts
+      // Candidate B has 0 swaps: score = 0.70 -> Math.round(0.70 * 15) = 11 pts
+      assert(
+        recA.scoreBreakdown.exchangeReliability > recB.scoreBreakdown.exchangeReliability,
+        `Expected Candidate A reliability (${recA.scoreBreakdown.exchangeReliability}) > Candidate B (${recB.scoreBreakdown.exchangeReliability})`
+      );
+      assert.strictEqual(recA.scoreBreakdown.exchangeReliability, 12, 'Candidate A should have 12 reliability points');
+      assert.strictEqual(recB.scoreBreakdown.exchangeReliability, 11, 'Candidate B should have 11 reliability points (0.70 * 15)');
+    });
+
+    await test('End-to-End: "High exchange completion record" badge appears for candidate with completed swaps, absent for candidate with no history', async () => {
+      const recs = await buildRecommendations(currentUser, 10);
+      const recA = recs.find(r => r.user._id.toString() === candidateA._id.toString());
+      const recB = recs.find(r => r.user._id.toString() === candidateB._id.toString());
+
+      const recAHasReliabilityReason = recA.reasons.some(r => r.includes('High exchange completion record'));
+      const recBHasReliabilityReason = recB.reasons.some(r => r.includes('High exchange completion record'));
+
+      assert.strictEqual(recAHasReliabilityReason, true, `Candidate A must have high reliability badge. Reasons: ${JSON.stringify(recA.reasons)}`);
+      assert.strictEqual(recBHasReliabilityReason, false, `Candidate B must NOT have high reliability badge. Reasons: ${JSON.stringify(recB.reasons)}`);
+    });
+
+    await test('End-to-End: Reliability values are correctly retrieved from Map returned by getBatchExchangeReliability() and fail on bracket access', async () => {
+      const { getBatchExchangeReliability } = require('./services/reliabilityService');
+      const reliabilityMap = await getBatchExchangeReliability([candidateA._id, candidateB._id]);
+
+      assert(reliabilityMap instanceof Map, 'getBatchExchangeReliability must return a Map instance');
+      assert(reliabilityMap.has(candidateA._id.toString()), 'Map must contain candidate A');
+      assert(reliabilityMap.has(candidateB._id.toString()), 'Map must contain candidate B');
+
+      const dataA = reliabilityMap.get(candidateA._id.toString());
+      const dataB = reliabilityMap.get(candidateB._id.toString());
+
+      assert.strictEqual(dataA.completedCount, 2, 'Candidate A should have 2 completed swaps in Map');
+      assert.strictEqual(dataA.score, 0.82, 'Candidate A should have 0.82 score in Map');
+      assert.strictEqual(dataB.completedCount, 0, 'Candidate B should have 0 completed swaps in Map');
+      assert.strictEqual(dataB.score, 0.70, 'Candidate B should have 0.70 neutral prior in Map');
+
+      // Proves regression sensitivity: bracket notation fails on Map
+      assert.strictEqual(reliabilityMap[candidateA._id.toString()], undefined, 'Bracket notation on Map returns undefined (proves bug regression guard)');
     });
 
     await test('End-to-End: Privacy protection — no private assessment details leaked', async () => {
