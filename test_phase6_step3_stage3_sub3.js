@@ -592,6 +592,163 @@ async function runTests() {
     assert.strictEqual(outboxCount, 3);
   });
 
+  await test('Concurrent final acceptance vs decline: If decline wins race before transition, acceptance aborts with 409 leaving zero reservations', async () => {
+    const uA = await createTestUser();
+    const uB = await createTestUser();
+    const uC = await createTestUser();
+
+    const legs = buildValid3CycleLegs(uA, uB, uC, ['Kubernetes', 'Terraform', 'Ansible']);
+    const reqCreate = { userId: uA._id.toString(), body: { legs } };
+    const resCreate = mockRes();
+    await createCircularProposal(reqCreate, resCreate);
+    const cycleId = resCreate.body._id.toString();
+    createdCycleIds.push(cycleId);
+
+    // Bob accepts first
+    await acceptCircularInvitation({ userId: uB._id.toString(), params: { id: cycleId } }, mockRes());
+
+    // Intercept findOneAndUpdate to simulate concurrent decline winning the race right after reservation acquisition
+    const origFindOneAndUpdate = CircularExchange.findOneAndUpdate;
+    let intercepted = false;
+    CircularExchange.findOneAndUpdate = async function (filter, update, options) {
+      if (!intercepted && filter && filter._id && filter._id.toString() === cycleId.toString()) {
+        intercepted = true;
+        // Concurrent decline transitions proposal to cancelled
+        await CircularExchange.updateOne(
+          { _id: cycleId },
+          { $set: { status: 'cancelled', cancelReason: 'Concurrently declined by participant' } }
+        );
+      }
+      return origFindOneAndUpdate.apply(this, arguments);
+    };
+
+    try {
+      const resC = mockRes();
+      await acceptCircularInvitation({ userId: uC._id.toString(), params: { id: cycleId } }, resC);
+
+      assert.strictEqual(resC.statusCode, 409, `Expected 409, got ${resC.statusCode}: ${JSON.stringify(resC.body)}`);
+      assert(resC.body.message.includes('cancelled'), `Expected cancelled error, got ${resC.body.message}`);
+    } finally {
+      CircularExchange.findOneAndUpdate = origFindOneAndUpdate;
+    }
+
+    // Verify database state: Proposal remains cancelled
+    const parent = await CircularExchange.findById(cycleId);
+    assert.strictEqual(parent.status, 'cancelled');
+
+    // ZERO reservations, ZERO child swaps, ZERO activation outbox events
+    const resCount = await ExchangeReservation.countDocuments({ exchangeId: cycleId });
+    const swapCount = await SwapRequest.countDocuments({ circularExchange: cycleId });
+    const outboxCount = await OutboxEvent.countDocuments({ aggregateId: cycleId, type: 'CIRCULAR_SWAP_ACTIVATED' });
+
+    assert.strictEqual(resCount, 0, 'No reservations should remain after concurrent decline abort');
+    assert.strictEqual(swapCount, 0, 'No child swaps should remain after concurrent decline abort');
+    assert.strictEqual(outboxCount, 0, 'No activation outbox events should remain after concurrent decline abort');
+  });
+
+  await test('Concurrent final acceptance vs expiration: If proposal expires during activation, acceptance aborts with 409 leaving zero reservations', async () => {
+    const uA = await createTestUser();
+    const uB = await createTestUser();
+    const uC = await createTestUser();
+
+    const legs = buildValid3CycleLegs(uA, uB, uC, ['NextJS', 'NuxtJS', 'SvelteKit']);
+    const reqCreate = { userId: uA._id.toString(), body: { legs } };
+    const resCreate = mockRes();
+    await createCircularProposal(reqCreate, resCreate);
+    const cycleId = resCreate.body._id.toString();
+    createdCycleIds.push(cycleId);
+
+    // Bob accepts first
+    await acceptCircularInvitation({ userId: uB._id.toString(), params: { id: cycleId } }, mockRes());
+
+    // Intercept findOneAndUpdate to simulate concurrent expiration right after reservation acquisition
+    const origFindOneAndUpdate = CircularExchange.findOneAndUpdate;
+    let intercepted = false;
+    CircularExchange.findOneAndUpdate = async function (filter, update, options) {
+      if (!intercepted && filter && filter._id && filter._id.toString() === cycleId.toString()) {
+        intercepted = true;
+        // Concurrent background sweeper or lazy check marks expired
+        await CircularExchange.updateOne(
+          { _id: cycleId },
+          { $set: { status: 'expired', cancelReason: 'Proposal expired after 72 hours' } }
+        );
+      }
+      return origFindOneAndUpdate.apply(this, arguments);
+    };
+
+    try {
+      const resC = mockRes();
+      await acceptCircularInvitation({ userId: uC._id.toString(), params: { id: cycleId } }, resC);
+
+      assert.strictEqual(resC.statusCode, 409, `Expected 409, got ${resC.statusCode}: ${JSON.stringify(resC.body)}`);
+      assert(resC.body.message.includes('expired'), `Expected expired error, got ${resC.body.message}`);
+    } finally {
+      CircularExchange.findOneAndUpdate = origFindOneAndUpdate;
+    }
+
+    // Verify database state: Proposal remains expired
+    const parent = await CircularExchange.findById(cycleId);
+    assert.strictEqual(parent.status, 'expired');
+
+    // ZERO reservations, ZERO child swaps, ZERO activation outbox events
+    const resCount = await ExchangeReservation.countDocuments({ exchangeId: cycleId });
+    const swapCount = await SwapRequest.countDocuments({ circularExchange: cycleId });
+    const outboxCount = await OutboxEvent.countDocuments({ aggregateId: cycleId, type: 'CIRCULAR_SWAP_ACTIVATED' });
+
+    assert.strictEqual(resCount, 0, 'No reservations should remain after concurrent expiration abort');
+    assert.strictEqual(swapCount, 0, 'No child swaps should remain after concurrent expiration abort');
+    assert.strictEqual(outboxCount, 0, 'No activation outbox events should remain after concurrent expiration abort');
+  });
+
+  await test('Promise.all concurrent final acceptance vs decline race produces deterministic outcome without corrupting reservations', async () => {
+    const uA = await createTestUser();
+    const uB = await createTestUser();
+    const uC = await createTestUser();
+
+    const legs = buildValid3CycleLegs(uA, uB, uC, ['GraphQL', 'REST', 'gRPC']);
+    const reqCreate = { userId: uA._id.toString(), body: { legs } };
+    const resCreate = mockRes();
+    await createCircularProposal(reqCreate, resCreate);
+    const cycleId = resCreate.body._id.toString();
+    createdCycleIds.push(cycleId);
+
+    // Bob accepts first (2 of 3 accepted)
+    await acceptCircularInvitation({ userId: uB._id.toString(), params: { id: cycleId } }, mockRes());
+
+    // True simultaneous race: Charlie attempts final acceptance while Bob attempts decline
+    const reqAccept = { userId: uC._id.toString(), params: { id: cycleId } };
+    const resAccept = mockRes();
+    const reqDecline = { userId: uB._id.toString(), params: { id: cycleId }, body: { reason: 'Changed mind' } };
+    const resDecline = mockRes();
+
+    await Promise.all([
+      acceptCircularInvitation(reqAccept, resAccept),
+      declineCircularInvitation(reqDecline, resDecline),
+    ]);
+
+    const parent = await CircularExchange.findById(cycleId);
+    const resCount = await ExchangeReservation.countDocuments({ exchangeId: cycleId });
+    const swapCount = await SwapRequest.countDocuments({ circularExchange: cycleId });
+    const outboxActivationCount = await OutboxEvent.countDocuments({ aggregateId: cycleId, type: 'CIRCULAR_SWAP_ACTIVATED' });
+
+    if (parent.status === 'active') {
+      // Activation won the race
+      assert.strictEqual(resCount, 3);
+      assert.strictEqual(swapCount, 3);
+      assert.strictEqual(outboxActivationCount, 3);
+      // Decline should have been rejected or ignored
+      assert(resDecline.statusCode === 400 || resDecline.statusCode === 200);
+    } else if (parent.status === 'cancelled') {
+      // Decline won the race
+      assert.strictEqual(resCount, 0);
+      assert.strictEqual(swapCount, 0);
+      assert.strictEqual(outboxActivationCount, 0);
+      assert(resAccept.statusCode === 400 || resAccept.statusCode === 409);
+    } else {
+      assert.fail(`Unexpected parent status: ${parent.status}`);
+    }
+  });
+
   // ─────────────────────────────────────────────────────────────────────────────
   // 4. LIFECYCLE GUARDS & RETRY CAPABILITY
   // ─────────────────────────────────────────────────────────────────────────────

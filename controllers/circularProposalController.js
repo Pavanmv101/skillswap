@@ -521,16 +521,25 @@ async function acceptCircularInvitation(req, res) {
       // If another concurrent request already activated this exchange, return cleanly without duplicating
       if (!activatedDoc) {
         const currentActive = await CircularExchange.findById(proposal._id).session(session);
-        result = {
-          statusCode: 200,
-          data: {
-            message: 'All participants accepted. Circular exchange successfully activated!',
-            proposal: currentActive || proposal,
-            allAccepted: true,
-            activated: true,
-          },
-        };
-        return;
+
+        if (currentActive && currentActive.status === 'active') {
+          result = {
+            statusCode: 200,
+            data: {
+              message: 'All participants accepted. Circular exchange successfully activated!',
+              proposal: currentActive,
+              allAccepted: true,
+              activated: true,
+            },
+          };
+          return;
+        }
+
+        // Parent exchange was concurrently cancelled, expired, or modified
+        const statusMsg = currentActive ? currentActive.status : 'not found';
+        const err = new Error(`Cannot activate circular exchange: proposal is ${statusMsg}`);
+        err.status = 409;
+        throw err;
       }
 
       // 5. Generate exactly three child SwapRequests (one per directed leg)
