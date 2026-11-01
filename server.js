@@ -20,6 +20,7 @@ const endorsementRoutes = require('./routes/endorsementRoutes');
 const learningRoutes = require('./routes/learningRoutes');
 const cronRoutes = require('./routes/cronRoutes');
 const recommendationRoutes = require('./routes/recommendationRoutes');
+const circularRoutes = require('./routes/circularRoutes');
 
 // Import notification and reminder services
 const { setIO } = require('./services/notificationService');
@@ -198,6 +199,7 @@ app.use('/api/endorsements', endorsementRoutes);
 app.use('/api/learning', learningRoutes);
 app.use('/api/cron', cronRoutes);
 app.use('/api/recommendations', recommendationRoutes);
+app.use('/api/circular', circularRoutes);
 
 // Centralized error handling middleware (handles CORS rejection with 403 Forbidden)
 app.use((err, req, res, next) => {
