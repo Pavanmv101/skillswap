@@ -52,5 +52,7 @@ swapRequestSchema.index({ fromUser: 1, toUser: 1, status: 1 });
 // Phase 6: compound indexes for exchange reliability and lifecycle queries
 swapRequestSchema.index({ fromUser: 1, status: 1 });
 swapRequestSchema.index({ toUser: 1, status: 1 });
+// Phase 7.2.1: sparse index for WebRTC room authorization lookup
+swapRequestSchema.index({ roomId: 1 }, { sparse: true });
 
 module.exports = mongoose.model('SwapRequest', swapRequestSchema);

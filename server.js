@@ -30,6 +30,9 @@ const { initOutboxDispatcher, stopOutboxDispatcher } = require('./services/outbo
 const app = express();
 const server = http.createServer(app);
 
+// Trust the first front-facing reverse proxy (e.g. Render, Vercel) safely
+app.set('trust proxy', 1);
+
 // ── Production-Grade Trusted CORS Configuration ───────────────────────────
 const localDevOrigins = new Set([
   'http://localhost:3000',
@@ -202,10 +205,13 @@ app.use('/api/cron', cronRoutes);
 app.use('/api/recommendations', recommendationRoutes);
 app.use('/api/circular', circularRoutes);
 
-// Centralized error handling middleware (handles CORS rejection with 403 Forbidden)
+// Centralized error handling middleware (handles CORS rejection with 403, body-parser syntax errors with 400)
 app.use((err, req, res, next) => {
   if (err && err.message && err.message.includes('CORS policy')) {
     return res.status(403).json({ message: err.message });
+  }
+  if (err && (err.status === 400 || err.statusCode === 400)) {
+    return res.status(400).json({ message: 'Invalid JSON request payload' });
   }
   console.error('[Server Error]', err);
   res.status(500).json({
@@ -213,6 +219,40 @@ app.use((err, req, res, next) => {
     error: process.env.NODE_ENV === 'production' ? undefined : err.message,
   });
 });
+
+// ── In-Memory Socket Event Rate Limiting ──────────────────────────────────
+/**
+ * In-memory sliding-window event rate limiter scoped per socket connection.
+ * Automatically deallocated when the socket disconnects.
+ *
+ * @param {import('socket.io').Socket} socket
+ * @param {string} eventName
+ * @param {number} maxEvents
+ * @param {number} windowMs
+ * @returns {boolean} true if allowed, false if limit exceeded
+ */
+function checkSocketRateLimit(socket, eventName, maxEvents, windowMs) {
+  if (!socket) return false;
+  if (!socket._rateLimiters) {
+    socket._rateLimiters = new Map();
+  }
+
+  const now = Date.now();
+  let tracker = socket._rateLimiters.get(eventName);
+
+  if (!tracker || now - tracker.windowStart > windowMs) {
+    tracker = { count: 1, windowStart: now };
+    socket._rateLimiters.set(eventName, tracker);
+    return true;
+  }
+
+  tracker.count++;
+  if (tracker.count > maxEvents) {
+    return false;
+  }
+
+  return true;
+}
 
 // Real-time Event Handlers
 const SwapRequest = require('./models/SwapRequest');
@@ -240,10 +280,15 @@ io.on('connection', (socket) => {
     }
   });
 
-  // ─── WebRTC P2P Signaling with Centralized Authorization ───
-  // User joins a video room
+  // ─── WebRTC P2P Signaling with Centralized Authorization & Throttling ───
+  // User joins a video room (Rate-limited to 15 per 60s per socket)
   socket.on('join-room', async ({ roomId, userName }) => {
     try {
+      // 0. Enforce rate limiting per socket
+      if (!checkSocketRateLimit(socket, 'join-room', 15, 60000)) {
+        return socket.emit('room-error', { message: 'Too many join-room requests, please slow down' });
+      }
+
       // 1. Validate roomId format and non-empty value
       if (!roomId || typeof roomId !== 'string' || !roomId.trim()) {
         return socket.emit('room-error', { message: 'Invalid or missing room ID' });
@@ -295,8 +340,11 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Relay WebRTC SDP Offer (Restricted to authenticated room members)
+  // Relay WebRTC SDP Offer (Restricted to authenticated room members, max 15 per 60s)
   socket.on('webrtc-offer', ({ roomId, sdp }) => {
+    if (!checkSocketRateLimit(socket, 'webrtc-offer', 15, 60000)) {
+      return socket.emit('room-error', { message: 'Signaling offer rate limit exceeded' });
+    }
     if (!socket.userId || !roomId || typeof roomId !== 'string' || !sdp) return;
     const cleanRoomId = roomId.trim();
     if (!socket.rooms.has(cleanRoomId)) {
@@ -308,8 +356,11 @@ io.on('connection', (socket) => {
     });
   });
 
-  // Relay WebRTC SDP Answer (Restricted to authenticated room members)
+  // Relay WebRTC SDP Answer (Restricted to authenticated room members, max 15 per 60s)
   socket.on('webrtc-answer', ({ roomId, sdp }) => {
+    if (!checkSocketRateLimit(socket, 'webrtc-answer', 15, 60000)) {
+      return socket.emit('room-error', { message: 'Signaling answer rate limit exceeded' });
+    }
     if (!socket.userId || !roomId || typeof roomId !== 'string' || !sdp) return;
     const cleanRoomId = roomId.trim();
     if (!socket.rooms.has(cleanRoomId)) {
@@ -321,8 +372,11 @@ io.on('connection', (socket) => {
     });
   });
 
-  // Relay ICE Candidate (Restricted to authenticated room members)
+  // Relay ICE Candidate (Restricted to authenticated room members, max 120 per 60s)
   socket.on('webrtc-ice-candidate', ({ roomId, candidate }) => {
+    if (!checkSocketRateLimit(socket, 'webrtc-ice-candidate', 120, 60000)) {
+      return socket.emit('room-error', { message: 'ICE candidate rate limit exceeded' });
+    }
     if (!socket.userId || !roomId || typeof roomId !== 'string' || !candidate) return;
     const cleanRoomId = roomId.trim();
     if (!socket.rooms.has(cleanRoomId)) {
@@ -353,6 +407,10 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
+    if (socket._rateLimiters) {
+      socket._rateLimiters.clear();
+      socket._rateLimiters = null;
+    }
     console.log(`[Socket.io] Socket disconnected: ${socket.id}`);
   });
 });
@@ -476,4 +534,5 @@ module.exports = {
   io,
   isAllowedOrigin,
   gracefulShutdown,
+  checkSocketRateLimit,
 };

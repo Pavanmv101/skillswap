@@ -4,6 +4,8 @@ frontend/node_modules/
 
 # Environment variables — never push these
 .env
+.env.*
+!.env.example
 
 # Build output
 frontend/dist/
