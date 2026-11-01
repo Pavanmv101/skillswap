@@ -24,6 +24,7 @@ const userSchema = new mongoose.Schema(
       {
         skill:    { type: String, required: true, trim: true },
         category: { type: String, default: 'General' },
+        level:    { type: String, enum: ['Beginner', 'Intermediate', 'Advanced'] },
         priority: { type: String, enum: ['Low', 'Medium', 'High'], default: 'Medium' },
       },
     ],
