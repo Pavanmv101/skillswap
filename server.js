@@ -215,6 +215,8 @@ app.use((err, req, res, next) => {
 });
 
 // Real-time Event Handlers
+const SwapRequest = require('./models/SwapRequest');
+
 io.on('connection', (socket) => {
   console.log(`[Socket.io] Socket connected: ${socket.id}`);
 
@@ -238,37 +240,95 @@ io.on('connection', (socket) => {
     }
   });
 
-  // ─── WebRTC P2P Signaling ──────────────────────────────────
+  // ─── WebRTC P2P Signaling with Centralized Authorization ───
   // User joins a video room
-  socket.on('join-room', ({ roomId, userName }) => {
-    socket.join(roomId);
-    console.log(`User ${userName} (${socket.id}) joined video room: ${roomId}`);
+  socket.on('join-room', async ({ roomId, userName }) => {
+    try {
+      // 1. Validate roomId format and non-empty value
+      if (!roomId || typeof roomId !== 'string' || !roomId.trim()) {
+        return socket.emit('room-error', { message: 'Invalid or missing room ID' });
+      }
 
-    socket.to(roomId).emit('user-joined', {
-      socketId: socket.id,
-      userName: userName || 'Peer',
-    });
+      const cleanRoomId = roomId.trim();
+
+      // 2. Require authenticated socket.userId
+      if (!socket.userId) {
+        return socket.emit('room-error', { message: 'Authentication required to join video room' });
+      }
+
+      // 3. Find the corresponding SwapRequest using roomId (authoritative for bilateral and circular child swaps)
+      const swap = await SwapRequest.findOne({ roomId: cleanRoomId })
+        .select('fromUser toUser status')
+        .lean();
+
+      if (!swap) {
+        return socket.emit('room-error', { message: 'Video room not found' });
+      }
+
+      // 4. Verify the room belongs to a valid accepted or completed swap
+      if (swap.status !== 'accepted' && swap.status !== 'completed') {
+        return socket.emit('room-error', { message: `Cannot join video session: swap is ${swap.status}` });
+      }
+
+      // 5. Verify authenticated user equals fromUser or toUser
+      const currentUserIdStr = socket.userId.toString();
+      const isAuthorized =
+        swap.fromUser.toString() === currentUserIdStr ||
+        swap.toUser.toString() === currentUserIdStr;
+
+      // 6. Reject observers, third circular participants, and unrelated users
+      if (!isAuthorized) {
+        return socket.emit('room-error', { message: 'Forbidden: You are not an authorized participant in this session' });
+      }
+
+      // 7. Only then execute socket.join(cleanRoomId)
+      socket.join(cleanRoomId);
+      console.log(`[Socket.io] User ${userName || 'Peer'} (${socket.userId}) authorized and joined video room: ${cleanRoomId}`);
+
+      socket.to(cleanRoomId).emit('user-joined', {
+        socketId: socket.id,
+        userName: userName || 'Peer',
+      });
+    } catch (err) {
+      console.error('[Socket.io] join-room error:', err.message);
+      socket.emit('room-error', { message: 'Internal server error while joining video room' });
+    }
   });
 
-  // Relay WebRTC SDP Offer
+  // Relay WebRTC SDP Offer (Restricted to authenticated room members)
   socket.on('webrtc-offer', ({ roomId, sdp }) => {
-    socket.to(roomId).emit('webrtc-offer', {
+    if (!socket.userId || !roomId || typeof roomId !== 'string' || !sdp) return;
+    const cleanRoomId = roomId.trim();
+    if (!socket.rooms.has(cleanRoomId)) {
+      return socket.emit('room-error', { message: 'Forbidden: Cannot send offer to unjoined room' });
+    }
+    socket.to(cleanRoomId).emit('webrtc-offer', {
       sdp,
       senderId: socket.id,
     });
   });
 
-  // Relay WebRTC SDP Answer
+  // Relay WebRTC SDP Answer (Restricted to authenticated room members)
   socket.on('webrtc-answer', ({ roomId, sdp }) => {
-    socket.to(roomId).emit('webrtc-answer', {
+    if (!socket.userId || !roomId || typeof roomId !== 'string' || !sdp) return;
+    const cleanRoomId = roomId.trim();
+    if (!socket.rooms.has(cleanRoomId)) {
+      return socket.emit('room-error', { message: 'Forbidden: Cannot send answer to unjoined room' });
+    }
+    socket.to(cleanRoomId).emit('webrtc-answer', {
       sdp,
       senderId: socket.id,
     });
   });
 
-  // Relay ICE Candidate
+  // Relay ICE Candidate (Restricted to authenticated room members)
   socket.on('webrtc-ice-candidate', ({ roomId, candidate }) => {
-    socket.to(roomId).emit('webrtc-ice-candidate', {
+    if (!socket.userId || !roomId || typeof roomId !== 'string' || !candidate) return;
+    const cleanRoomId = roomId.trim();
+    if (!socket.rooms.has(cleanRoomId)) {
+      return socket.emit('room-error', { message: 'Forbidden: Cannot send ICE candidate to unjoined room' });
+    }
+    socket.to(cleanRoomId).emit('webrtc-ice-candidate', {
       candidate,
       senderId: socket.id,
     });
@@ -276,8 +336,12 @@ io.on('connection', (socket) => {
 
   // Peer leaves room explicitly
   socket.on('leave-room', ({ roomId }) => {
-    socket.leave(roomId);
-    socket.to(roomId).emit('user-left');
+    if (!roomId || typeof roomId !== 'string') return;
+    const cleanRoomId = roomId.trim();
+    if (socket.rooms.has(cleanRoomId)) {
+      socket.leave(cleanRoomId);
+      socket.to(cleanRoomId).emit('user-left');
+    }
   });
 
   socket.on('disconnecting', () => {

@@ -76,12 +76,14 @@ export default function Room() {
           console.warn('[WebRTC] Falling back to default STUN configuration')
         }
 
-        // 2. Connect to backend signaling server via Socket.io
+        // 2. Connect to backend signaling server via Socket.io with authenticated handshake token
+        const token = localStorage.getItem('token')
         const socketUrl =
           import.meta.env.VITE_SOCKET_URL ||
           (import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/api\/?$/, '') : '') ||
           (window.location.hostname === 'localhost' ? 'http://localhost:5001' : window.location.origin)
         const socket = io(socketUrl, {
+          auth: { token },
           transports: ['websocket', 'polling'],
         })
         socketRef.current = socket
@@ -176,6 +178,20 @@ export default function Room() {
             userName: user?.name || 'Peer',
           })
           setCallStatus('waiting')
+        })
+
+        // Server-side authorization failure for video room
+        socket.on('room-error', ({ message }) => {
+          console.error('[WebRTC] Room authorization error:', message)
+          setPermissionError(message || 'Access to this video session is not authorized.')
+          setCallStatus('error')
+          addToast(message || 'Failed to join video room', 'error')
+          if (localStreamRef.current) {
+            localStreamRef.current.getTracks().forEach(t => t.stop())
+          }
+          if (pcRef.current) {
+            pcRef.current.close()
+          }
         })
 
         // A new user has joined the room -> We initiate the WebRTC offer
