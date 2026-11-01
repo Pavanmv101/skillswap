@@ -907,7 +907,7 @@ async function runTests() {
 
     const resL2 = mockRes();
     await learnerConfirmLegCompletion({ userId: uA._id.toString(), params: { id: cycleId, legIndex: '2' } }, resL2);
-    assert.strictEqual(resL2.statusCode, 200);
+    assert.strictEqual(resL2.statusCode, 200, resL2.body?.error || resL2.body?.message);
 
     // All three legs are now completed!
     current = await CircularExchange.findById(cycleId);
@@ -915,8 +915,10 @@ async function runTests() {
     assert.strictEqual(current.legs[1].status, 'completed');
     assert.strictEqual(current.legs[2].status, 'completed');
 
-    // Parent exchange status remains active (finalization is out of scope in Substage 3.4.2)
-    assert.strictEqual(current.status, 'active');
+    // Substage 3.4.3: Parent exchange is automatically finalized when all 3 legs are completed
+    assert.strictEqual(current.status, 'completed');
+    assert.ok(current.completedAt);
+    assert.strictEqual(current.finalizationHistory.length, 1);
 
     // All 3 child swaps are synchronized to completed
     const cs0 = await SwapRequest.findById(current.legs[0].swapRequest);

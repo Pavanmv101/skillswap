@@ -58,12 +58,6 @@ async function teacherCompleteLeg(req, res) {
         throw err;
       }
 
-      if (exchange.status !== 'active') {
-        const err = new Error(`Cannot complete leg: circular exchange is ${exchange.status}`);
-        err.status = 400;
-        throw err;
-      }
-
       const leg = exchange.legs.find(l => l.legIndex === legIndex) || exchange.legs[legIndex];
       if (!leg) {
         const err = new Error(`Leg at index ${legIndex} not found`);
@@ -120,6 +114,12 @@ async function teacherCompleteLeg(req, res) {
           },
         };
         return;
+      }
+
+      if (exchange.status !== 'active') {
+        const err = new Error(`Cannot complete leg: circular exchange is ${exchange.status}`);
+        err.status = 400;
+        throw err;
       }
 
       // Leg must be in 'scheduled' status to transition to 'teacher_completed'
@@ -266,6 +266,7 @@ async function teacherCompleteLeg(req, res) {
  */
 async function learnerConfirmLegCompletion(req, res) {
   let mutated = false;
+  let parentFinalized = false;
   let previousState = null;
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
@@ -285,12 +286,6 @@ async function learnerConfirmLegCompletion(req, res) {
       if (!exchange) {
         const err = new Error('Circular exchange not found');
         err.status = 404;
-        throw err;
-      }
-
-      if (exchange.status !== 'active') {
-        const err = new Error(`Cannot confirm completion: circular exchange is ${exchange.status}`);
-        err.status = 400;
         throw err;
       }
 
@@ -331,9 +326,17 @@ async function learnerConfirmLegCompletion(req, res) {
             learnerConfirmedAt: leg.learnerConfirmedAt,
             scheduledAt: leg.scheduledAt,
             completionHistory: leg.completionHistory || [],
+            exchangeStatus: exchange.status,
+            exchangeFinalized: exchange.status === 'completed',
           },
         };
         return;
+      }
+
+      if (exchange.status !== 'active') {
+        const err = new Error(`Cannot confirm completion: circular exchange is ${exchange.status}`);
+        err.status = 400;
+        throw err;
       }
 
       // Cannot confirm if teacher has not marked complete yet
@@ -403,6 +406,8 @@ async function learnerConfirmLegCompletion(req, res) {
               learnerConfirmedAt: currentLeg.learnerConfirmedAt,
               scheduledAt: currentLeg.scheduledAt,
               completionHistory: currentLeg.completionHistory || [],
+              exchangeStatus: latest.status,
+              exchangeFinalized: latest.status === 'completed',
             },
           };
           return;
@@ -444,12 +449,112 @@ async function learnerConfirmLegCompletion(req, res) {
         { session }
       );
 
+      // ── Substage 3.4.3: Automatic Circular Exchange Finalization ──
+      // Invariant: Finalize parent only when all 3 legs and child SwapRequests are verified completed.
+      let finalizedExchange = null;
+      const allLegsCompleted =
+        Array.isArray(updatedExchange.legs) &&
+        updatedExchange.legs.length === 3 &&
+        updatedExchange.legs.every(
+          l =>
+            l.status === 'completed' &&
+            l.teacherCompletedAt &&
+            l.learnerConfirmedAt &&
+            l.swapRequest
+        );
+
+      if (allLegsCompleted) {
+        // Query child SwapRequests inside the transaction session
+        const childSwaps = await SwapRequest.find({ circularExchange: exchange._id }).session(session);
+
+        let invariantSatisfied = childSwaps.length === 3;
+        if (invariantSatisfied) {
+          for (const l of updatedExchange.legs) {
+            const cs = childSwaps.find(s => s._id.toString() === l.swapRequest.toString());
+            if (
+              !cs ||
+              cs.status !== 'completed' ||
+              !cs.circularExchange ||
+              cs.circularExchange.toString() !== exchange._id.toString() ||
+              cs.circularLegIndex !== l.legIndex ||
+              cs.fromUser.toString() !== l.teacher.toString() ||
+              cs.toUser.toString() !== l.learner.toString()
+            ) {
+              invariantSatisfied = false;
+              break;
+            }
+          }
+        }
+
+        if (invariantSatisfied) {
+          const finalizationTimestamp = new Date();
+          const legSnapshots = updatedExchange.legs.map(l => ({
+            legIndex: l.legIndex,
+            teacher: l.teacher,
+            learner: l.learner,
+            skill: l.skill,
+            swapRequest: l.swapRequest,
+            teacherCompletedAt: l.teacherCompletedAt,
+            learnerConfirmedAt: l.learnerConfirmedAt,
+            completedAt: l.completedAt,
+          }));
+
+          const finalizationEntry = {
+            finalizedAt: finalizationTimestamp,
+            actionBy: req.userId,
+            legs: legSnapshots,
+            notes: 'Automatic circular exchange finalization upon completion of all 3 directed legs',
+          };
+
+          // Conditional parent status transition: ensures only ONE concurrent worker can finalize
+          finalizedExchange = await CircularExchange.findOneAndUpdate(
+            {
+              _id: exchange._id,
+              status: 'active',
+            },
+            {
+              $set: {
+                status: 'completed',
+                completedAt: finalizationTimestamp,
+                completedBy: req.userId,
+              },
+              $push: {
+                finalizationHistory: finalizationEntry,
+              },
+            },
+            { returnDocument: 'after', session }
+          );
+
+          if (finalizedExchange) {
+            parentFinalized = true;
+
+            // Transactional OutboxEvents for all 3 participants notifying exchange finalization
+            const parentOutboxEvents = finalizedExchange.participants.map(p => ({
+              aggregateType: 'circular_exchange',
+              aggregateId: finalizedExchange._id,
+              recipient: p.user,
+              sender: req.userId,
+              type: 'CIRCULAR_EXCHANGE_COMPLETED',
+              title: 'Circular Skill Exchange Completed! 🏆',
+              message: 'Congratulations! All three legs of your 3-way circular skill exchange have been successfully completed!',
+              relatedSwap: null,
+              status: 'pending',
+            }));
+
+            await OutboxEvent.insertMany(parentOutboxEvents, { session });
+          }
+        }
+      }
+
       const updatedLeg = updatedExchange.legs.find(l => l.legIndex === legIndex) || updatedExchange.legs[legIndex];
+      const effectiveExchange = finalizedExchange || updatedExchange;
 
       result = {
         statusCode: 200,
         data: {
-          message: 'Leg completion confirmed successfully',
+          message: finalizedExchange
+            ? 'Leg completion confirmed and circular exchange fully finalized! 🏆'
+            : 'Leg completion confirmed successfully',
           legIndex,
           status: updatedLeg.status,
           completedAt: updatedLeg.completedAt,
@@ -457,32 +562,50 @@ async function learnerConfirmLegCompletion(req, res) {
           learnerConfirmedAt: updatedLeg.learnerConfirmedAt,
           scheduledAt: updatedLeg.scheduledAt,
           completionHistory: updatedLeg.completionHistory,
+          exchangeStatus: effectiveExchange.status,
+          exchangeFinalized: effectiveExchange.status === 'completed',
+          exchangeCompletedAt: effectiveExchange.completedAt || null,
         },
       };
     });
 
     return res.status(result.statusCode).json(result.data);
   } catch (err) {
-    if (!isTransactionSupported() && mutated && previousState && req.params && req.params.id) {
+    if (!isTransactionSupported() && req.params && req.params.id) {
       try {
-        const legIndex = parseInt(req.params.legIndex, 10);
-        await CircularExchange.updateOne(
-          { _id: req.params.id },
-          {
-            $set: {
-              [`legs.${legIndex}.status`]: previousState.status,
-              [`legs.${legIndex}.learnerConfirmedAt`]: previousState.learnerConfirmedAt,
-              [`legs.${legIndex}.learnerConfirmedBy`]: previousState.learnerConfirmedBy,
-              [`legs.${legIndex}.completedAt`]: previousState.completedAt,
-            },
-            $pop: { [`legs.${legIndex}.completionHistory`]: 1 },
-          }
-        );
-        if (previousState.swapRequest) {
-          await SwapRequest.updateOne(
-            { _id: previousState.swapRequest },
-            { $set: { status: 'accepted' } }
+        if (parentFinalized) {
+          await CircularExchange.updateOne(
+            { _id: req.params.id },
+            {
+              $set: {
+                status: 'active',
+                completedAt: null,
+                completedBy: null,
+              },
+              $pop: { finalizationHistory: 1 },
+            }
           );
+        }
+        if (mutated && previousState) {
+          const legIndex = parseInt(req.params.legIndex, 10);
+          await CircularExchange.updateOne(
+            { _id: req.params.id },
+            {
+              $set: {
+                [`legs.${legIndex}.status`]: previousState.status,
+                [`legs.${legIndex}.learnerConfirmedAt`]: previousState.learnerConfirmedAt,
+                [`legs.${legIndex}.learnerConfirmedBy`]: previousState.learnerConfirmedBy,
+                [`legs.${legIndex}.completedAt`]: previousState.completedAt,
+              },
+              $pop: { [`legs.${legIndex}.completionHistory`]: 1 },
+            }
+          );
+          if (previousState.swapRequest) {
+            await SwapRequest.updateOne(
+              { _id: previousState.swapRequest },
+              { $set: { status: 'accepted' } }
+            );
+          }
         }
       } catch (_) {}
     }

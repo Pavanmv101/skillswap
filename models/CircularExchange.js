@@ -302,6 +302,49 @@ const circularExchangeSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+
+    completedAt: {
+      type: Date,
+      default: null,
+    },
+
+    completedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
+
+    finalizationHistory: [
+      {
+        finalizedAt: {
+          type: Date,
+          default: Date.now,
+        },
+        actionBy: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'User',
+          default: null,
+        },
+        legs: [
+          {
+            legIndex: Number,
+            teacher: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+            learner: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+            skill: String,
+            swapRequest: { type: mongoose.Schema.Types.ObjectId, ref: 'SwapRequest' },
+            teacherCompletedAt: Date,
+            learnerConfirmedAt: Date,
+            completedAt: Date,
+          },
+        ],
+        notes: {
+          type: String,
+          default: '',
+          maxlength: 500,
+          trim: true,
+        },
+      },
+    ],
   },
   { timestamps: true }
 );
