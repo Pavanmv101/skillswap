@@ -136,6 +136,11 @@ exports.acceptSwapRequest = async (req, res) => {
         err.statusCode = 403;
         throw err;
       }
+      if (swap.circularExchange) {
+        const err = new Error('Circular exchange legs cannot be modified directly via bilateral endpoints. Use the dedicated circular exchange endpoints.');
+        err.statusCode = 409;
+        throw err;
+      }
       if (swap.status !== 'pending') {
         const err = new Error('Only pending requests can be accepted');
         err.statusCode = 400;
@@ -231,6 +236,11 @@ exports.rejectSwapRequest = async (req, res) => {
     if (swap.toUser._id.toString() !== req.userId.toString()) {
       return res.status(403).json({ message: 'Not authorized to reject this request' });
     }
+    if (swap.circularExchange) {
+      return res.status(409).json({
+        message: 'Circular exchange legs cannot be modified directly via bilateral endpoints. Use the dedicated circular exchange endpoints.',
+      });
+    }
     if (swap.status !== 'pending') {
       return res.status(400).json({ message: 'Only pending requests can be rejected' });
     }
@@ -279,6 +289,11 @@ exports.cancelSwapRequest = async (req, res) => {
       if (swap.fromUser._id.toString() !== req.userId.toString()) {
         const err = new Error('Only the sender can cancel a request');
         err.statusCode = 403;
+        throw err;
+      }
+      if (swap.circularExchange) {
+        const err = new Error('Circular exchange legs cannot be modified directly via bilateral endpoints. Use the dedicated circular exchange endpoints.');
+        err.statusCode = 409;
         throw err;
       }
       if (swap.status !== 'pending' && swap.status !== 'accepted') {
@@ -352,6 +367,11 @@ exports.completeSwapRequest = async (req, res) => {
         err.statusCode = 403;
         throw err;
       }
+      if (swap.circularExchange) {
+        const err = new Error('Circular exchange legs cannot be modified directly via bilateral endpoints. Use the dedicated circular exchange endpoints.');
+        err.statusCode = 409;
+        throw err;
+      }
       if (swap.status !== 'accepted') {
         const err = new Error('Only accepted swaps can be marked complete');
         err.statusCode = 400;
@@ -422,6 +442,11 @@ exports.scheduleSwap = async (req, res) => {
 
     if (!isFromUser && !isToUser) {
       return res.status(403).json({ message: 'Not authorized to schedule this swap' });
+    }
+    if (swap.circularExchange) {
+      return res.status(409).json({
+        message: 'Circular exchange legs cannot be modified directly via bilateral endpoints. Use the dedicated circular exchange endpoints.',
+      });
     }
     if (swap.status !== 'accepted') {
       return res.status(400).json({ message: 'Only accepted swaps can be scheduled' });

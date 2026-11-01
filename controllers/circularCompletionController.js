@@ -23,7 +23,8 @@ const CircularExchange = require('../models/CircularExchange');
 const SwapRequest = require('../models/SwapRequest');
 const User = require('../models/User');
 const OutboxEvent = require('../models/OutboxEvent');
-const { withTransaction, isTransactionSupported } = require('../services/reservationService');
+const ExchangeReservation = require('../models/ExchangeReservation');
+const { withTransaction, isTransactionSupported, releaseReservations } = require('../services/reservationService');
 
 /**
  * PUT /api/circular/:id/legs/:legIndex/complete
@@ -267,6 +268,8 @@ async function teacherCompleteLeg(req, res) {
 async function learnerConfirmLegCompletion(req, res) {
   let mutated = false;
   let parentFinalized = false;
+  let reservationsReleased = false;
+  let releasedReservationSnapshots = [];
   let previousState = null;
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
@@ -528,6 +531,15 @@ async function learnerConfirmLegCompletion(req, res) {
           if (finalizedExchange) {
             parentFinalized = true;
 
+            // In standalone fallback mode, snapshot existing reservations before release for compensation rollback
+            if (!isTransactionSupported()) {
+              releasedReservationSnapshots = await ExchangeReservation.find({ exchangeId: exchange._id }).lean();
+            }
+
+            // Release all 3 circular reservations inside the same transaction session
+            await releaseReservations({ exchangeId: exchange._id, session });
+            reservationsReleased = true;
+
             // Transactional OutboxEvents for all 3 participants notifying exchange finalization
             const parentOutboxEvents = finalizedExchange.participants.map(p => ({
               aggregateType: 'circular_exchange',
@@ -585,6 +597,9 @@ async function learnerConfirmLegCompletion(req, res) {
               $pop: { finalizationHistory: 1 },
             }
           );
+          if (reservationsReleased && releasedReservationSnapshots.length > 0) {
+            await ExchangeReservation.insertMany(releasedReservationSnapshots);
+          }
         }
         if (mutated && previousState) {
           const legIndex = parseInt(req.params.legIndex, 10);
