@@ -456,6 +456,22 @@ button, input, select, textarea {
   color: #92400e;
 }
 
+.tag-highlight {
+  background: #ecfdf5;
+  color: #065f46;
+  border: 1px solid #a7f3d0;
+}
+
+.score-chip {
+  display: inline-flex;
+  align-items: center;
+  background: var(--surface-alt, rgba(0, 0, 0, 0.04));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  padding: 0.15rem 0.5rem;
+  font-weight: 600;
+}
+
 /* ─── Compatibility Bar ─────────────────────────────────────────────────── */
 .compat-bar {
   margin: 0.85rem 0;

@@ -98,6 +98,9 @@ export default function Navbar() {
               <NavLink to="/matches" onClick={() => setMobileOpen(false)}>
                 Find Matches
               </NavLink>
+              <NavLink to="/recommendations" onClick={() => setMobileOpen(false)} style={{ fontWeight: 600 }}>
+                ✨ For You
+              </NavLink>
               <NavLink to="/swaps" onClick={() => setMobileOpen(false)} className="nav-swap-link">
                 My Swaps
                 {pendingSwapCount > 0 && <span className="nav-badge-pill">{pendingSwapCount}</span>}

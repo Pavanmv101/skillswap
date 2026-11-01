@@ -15,6 +15,7 @@ import PublicProfile from './pages/PublicProfile'
 import Notifications from './pages/Notifications'
 import AdminVerifications from './pages/AdminVerifications'
 import LearningDashboard from './pages/LearningDashboard'
+import Recommendations   from './pages/Recommendations'
 
 function PrivateRoute({ children }) {
   const { token } = useAuth()
@@ -48,6 +49,7 @@ export default function App() {
                 <Route path="/user/:id"       element={<PrivateRoute><PublicProfile /></PrivateRoute>} />
                 <Route path="/notifications"  element={<PrivateRoute><Notifications /></PrivateRoute>} />
                 <Route path="/learning"       element={<PrivateRoute><LearningDashboard /></PrivateRoute>} />
+                <Route path="/recommendations" element={<PrivateRoute><Recommendations /></PrivateRoute>} />
                 <Route path="/admin"          element={<AdminRoute><AdminVerifications /></AdminRoute>} />
                 <Route path="*"               element={<Navigate to="/" replace />} />
               </Routes>
