@@ -36,6 +36,7 @@ const {
   releaseReservations,
   getActiveReservations,
   backfillLegacyReservations,
+  assertNoAcceptedSwapConflicts,
   ReservationConflictError,
   withTransaction,
   isTransactionSupported,
@@ -626,6 +627,201 @@ async function runTests() {
 
       assert.strictEqual(res.statusCode, 400);
       assert.strictEqual(res.body.message, 'Only pending requests can be accepted');
+    });
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // 7. SUBSTAGE 3.1.2: LEGACY CONFLICT ENFORCEMENT & PRODUCTION FAIL-FAST
+    // ──────────────────────────────────────────────────────────────────────────
+    console.log('\n--- 7. Substage 3.1.2: Legacy Conflict Enforcement & Production Fail-Fast ---');
+
+    await test('1. Participant with two accepted legacy swaps and no reservations cannot accept another pending swap', async () => {
+      const uConflicted = await createTestUser({ name: 'User_DualLegacy' });
+      const uP1 = await createTestUser({ name: 'Partner_L1' });
+      const uP2 = await createTestUser({ name: 'Partner_L2' });
+      const uP3 = await createTestUser({ name: 'Partner_L3' });
+
+      // Create 2 accepted swaps without reservations
+      await createTestSwap(uConflicted, uP1, { status: 'accepted' });
+      await createTestSwap(uP2, uConflicted, { status: 'accepted' });
+
+      // Confirm no reservations exist for uConflicted
+      const initialRes = await getActiveReservations(uConflicted._id);
+      assert.strictEqual(initialRes.length, 0);
+
+      // Pending swap proposal targeting uConflicted
+      const newSwap = await createTestSwap(uP3, uConflicted, { status: 'pending' });
+      const req = { params: { id: newSwap._id.toString() }, userId: uConflicted._id.toString() };
+      const res = mockRes();
+
+      await acceptSwapRequest(req, res);
+
+      assert.strictEqual(res.statusCode, 409);
+      assert.strictEqual(res.body.message, 'One or more participants currently have an active exchange in progress');
+
+      const checkDb = await SwapRequest.findById(newSwap._id);
+      assert.strictEqual(checkDb.status, 'pending');
+
+      const checkRes = await getActiveReservations(uConflicted._id);
+      assert.strictEqual(checkRes.length, 0);
+    });
+
+    await test('2. Participant with one accepted legacy swap and no reservation cannot accept another pending swap', async () => {
+      const uLegacy = await createTestUser({ name: 'User_SingleLegacy' });
+      const uP1 = await createTestUser({ name: 'Partner_SL1' });
+      const uP2 = await createTestUser({ name: 'Partner_SL2' });
+
+      // 1 accepted swap without reservation
+      await createTestSwap(uLegacy, uP1, { status: 'accepted' });
+
+      const newSwap = await createTestSwap(uLegacy, uP2, { status: 'pending' });
+      const req = { params: { id: newSwap._id.toString() }, userId: uP2._id.toString() };
+      const res = mockRes();
+
+      await acceptSwapRequest(req, res);
+
+      assert.strictEqual(res.statusCode, 409);
+      assert.strictEqual(res.body.message, 'One or more participants currently have an active exchange in progress');
+    });
+
+    await test('3. Existing accepted swap in fromUser direction blocks acceptance', async () => {
+      const uFrom = await createTestUser({ name: 'User_FromBlocked' });
+      const uP1 = await createTestUser({ name: 'Partner_From1' });
+      const uP2 = await createTestUser({ name: 'Partner_From2' });
+
+      // uFrom is fromUser in accepted swap
+      await createTestSwap(uFrom, uP1, { status: 'accepted' });
+
+      // uFrom is toUser in pending swap
+      const newSwap = await createTestSwap(uP2, uFrom, { status: 'pending' });
+      const req = { params: { id: newSwap._id.toString() }, userId: uFrom._id.toString() };
+      const res = mockRes();
+
+      await acceptSwapRequest(req, res);
+      assert.strictEqual(res.statusCode, 409);
+    });
+
+    await test('4. Existing accepted swap in toUser direction blocks acceptance', async () => {
+      const uTo = await createTestUser({ name: 'User_ToBlocked' });
+      const uP1 = await createTestUser({ name: 'Partner_To1' });
+      const uP2 = await createTestUser({ name: 'Partner_To2' });
+
+      // uTo is toUser in accepted swap
+      await createTestSwap(uP1, uTo, { status: 'accepted' });
+
+      // uTo is fromUser in pending swap
+      const newSwap = await createTestSwap(uTo, uP2, { status: 'pending' });
+      const req = { params: { id: newSwap._id.toString() }, userId: uP2._id.toString() };
+      const res = mockRes();
+
+      await acceptSwapRequest(req, res);
+      assert.strictEqual(res.statusCode, 409);
+    });
+
+    await test('5. Current pending request is correctly excluded from the conflict query', async () => {
+      const uA = await createTestUser({ name: 'User_ExcludeA' });
+      const uB = await createTestUser({ name: 'User_ExcludeB' });
+
+      const pendingSwap = await createTestSwap(uA, uB, { status: 'pending' });
+
+      // assertNoAcceptedSwapConflicts excluding current swap should pass cleanly
+      const conflictCheck = await assertNoAcceptedSwapConflicts({
+        participantIds: [uA._id, uB._id],
+        excludeSwapId: pendingSwap._id,
+      });
+
+      assert.strictEqual(conflictCheck.hasConflict, false);
+      assert.strictEqual(conflictCheck.conflictingSwaps.length, 0);
+    });
+
+    await test('6. Production withTransaction() fails fast when transaction support is unavailable', async () => {
+      if (!isTransactionSupported()) {
+        const origEnv = process.env.NODE_ENV;
+        try {
+          process.env.NODE_ENV = 'production';
+          await assert.rejects(
+            async () => {
+              await withTransaction(async () => {});
+            },
+            /multi-document transactions are required in production/
+          );
+        } finally {
+          process.env.NODE_ENV = origEnv;
+        }
+      } else {
+        // In replica set environments, verify withTransaction executes within real session
+        let capturedSession = null;
+        await withTransaction(async (session) => {
+          capturedSession = session;
+        });
+        assert(capturedSession !== null);
+      }
+    });
+
+    await test('7. Development/test standalone fallback remains compatible', async () => {
+      const origEnv = process.env.NODE_ENV;
+      try {
+        process.env.NODE_ENV = 'test';
+        let callbackExecuted = false;
+        await withTransaction(async (session) => {
+          callbackExecuted = true;
+          // In standalone dev/test, session is null; in replica set, session is active ClientSession
+          if (!isTransactionSupported()) {
+            assert.strictEqual(session, null);
+          } else {
+            assert(session !== null);
+          }
+        });
+        assert.strictEqual(callbackExecuted, true);
+      } finally {
+        process.env.NODE_ENV = origEnv;
+      }
+    });
+
+    await test('8. Reusable conflict-checking service works with the supplied session', async () => {
+      const uConflict = await createTestUser({ name: 'User_ServiceSession' });
+      const uOther = await createTestUser({ name: 'User_ServiceOther' });
+
+      const acceptedSwap = await createTestSwap(uConflict, uOther, { status: 'accepted' });
+
+      await withTransaction(async (session) => {
+        await assert.rejects(
+          async () => {
+            await assertNoAcceptedSwapConflicts({
+              participantIds: [uConflict._id],
+              session,
+            });
+          },
+          (err) => {
+            assert(err instanceof ReservationConflictError);
+            assert.strictEqual(err.status, 409);
+            assert.strictEqual(err.code, 'RESERVATION_CONFLICT');
+            assert(err.details.conflictingSwapIds.includes(acceptedSwap._id.toString()));
+            return true;
+          }
+        );
+      });
+    });
+
+    await test('9. Existing reservation conflict behaviour remains unchanged', async () => {
+      const uResA = await createTestUser({ name: 'User_ResUnchangedA' });
+      const uResB = await createTestUser({ name: 'User_ResUnchangedB' });
+      const uResC = await createTestUser({ name: 'User_ResUnchangedC' });
+
+      // First bilateral acceptance acquires reservations
+      const swap1 = await createTestSwap(uResA, uResB, { status: 'pending' });
+      await acceptSwapRequest({ params: { id: swap1._id.toString() }, userId: uResB._id.toString() }, mockRes());
+
+      const resList = await getActiveReservations([uResA._id, uResB._id]);
+      assert.strictEqual(resList.length, 2);
+      createdResIds.push(...resList.map(r => r._id));
+
+      // Second bilateral acceptance for uResB fails with 409 due to ExchangeReservation
+      const swap2 = await createTestSwap(uResC, uResB, { status: 'pending' });
+      const res2 = mockRes();
+      await acceptSwapRequest({ params: { id: swap2._id.toString() }, userId: uResB._id.toString() }, res2);
+
+      assert.strictEqual(res2.statusCode, 409);
+      assert.strictEqual(res2.body.message, 'One or more participants currently have an active exchange in progress');
     });
 
   } finally {

@@ -48,14 +48,25 @@ function isTransactionSupported() {
 
 /**
  * Executes a callback within a MongoDB transaction if the connected cluster supports transactions.
- * In standalone environments where multi-document transactions are unsupported, runs the callback
- * with session = null, relying on atomic database-level unique constraints for concurrency control.
+ * In production, multi-document transactions are mandatory; unsupported topology fails fast immediately.
+ * In development and test environments, falls back to standalone execution (session = null)
+ * using atomic database-level unique constraints for concurrency control.
  *
  * @param {Function} callback - async (session) => result
  * @returns {Promise<any>}
  */
 async function withTransaction(callback) {
-  if (!isTransactionSupported()) {
+  const supported = isTransactionSupported();
+
+  if (!supported) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error(
+        'MongoDB multi-document transactions are required in production but unsupported by the connected topology (must be a Replica Set or Sharded Cluster)'
+      );
+    }
+    // Standalone fallback: permitted for development and testing environments only.
+    // Note: Non-transactional fallback relies on database unique indexes and compensating deletes,
+    // which do NOT provide ACID multi-document atomicity in the event of abnormal process termination.
     return await callback(null);
   }
 
@@ -75,6 +86,77 @@ async function withTransaction(callback) {
       session.endSession();
     } catch (_) {}
   }
+}
+
+/**
+ * Asserts that none of the specified participants are currently engaged in an active accepted SwapRequest.
+ * Enforces mutual exclusion across legacy bilateral exchanges that were accepted prior to the
+ * introduction of the ExchangeReservation system.
+ *
+ * Requirements:
+ * - Checks both fromUser and toUser directions.
+ * - Filters strictly to status 'accepted'.
+ * - Excludes the current pending SwapRequest ID when provided.
+ * - Propagates caller's session to query.
+ * - Throws ReservationConflictError (HTTP 409) if any participant has an active accepted swap.
+ *
+ * @param {Object} params
+ * @param {Array<mongoose.Types.ObjectId|string>} params.participantIds - Participant user IDs to check
+ * @param {mongoose.Types.ObjectId|string} [params.excludeSwapId] - Current swap ID to exclude from conflict check
+ * @param {mongoose.ClientSession|null} [params.session] - Transaction session to attach to query
+ * @returns {Promise<{ hasConflict: boolean, conflictingSwaps: Array }>}
+ * @throws {ReservationConflictError} HTTP 409 if any participant has an active accepted swap
+ */
+async function assertNoAcceptedSwapConflicts({ participantIds = [], excludeSwapId = null, session = null } = {}) {
+  if (!Array.isArray(participantIds) || participantIds.length === 0) {
+    return { hasConflict: false, conflictingSwaps: [] };
+  }
+
+  const validIds = participantIds.map(id => new mongoose.Types.ObjectId(id._id || id));
+
+  const filter = {
+    $or: [
+      { fromUser: { $in: validIds }, status: 'accepted' },
+      { toUser:   { $in: validIds }, status: 'accepted' },
+    ],
+  };
+
+  if (excludeSwapId) {
+    filter._id = { $ne: new mongoose.Types.ObjectId(excludeSwapId._id || excludeSwapId) };
+  }
+
+  const query = SwapRequest.find(filter);
+  if (session) {
+    query.session(session);
+  }
+
+  const conflictingSwaps = await query.lean();
+
+  if (conflictingSwaps.length > 0) {
+    const conflictingParticipantIds = new Set();
+    const validIdStrs = new Set(validIds.map(id => id.toString()));
+
+    for (const swap of conflictingSwaps) {
+      if (validIdStrs.has(swap.fromUser.toString())) {
+        conflictingParticipantIds.add(swap.fromUser.toString());
+      }
+      if (validIdStrs.has(swap.toUser.toString())) {
+        conflictingParticipantIds.add(swap.toUser.toString());
+      }
+    }
+
+    throw new ReservationConflictError(
+      'One or more participants currently have an active exchange in progress',
+      {
+        conflictType: 'ACCEPTED_SWAP_CONFLICT',
+        conflictingParticipants: Array.from(conflictingParticipantIds),
+        conflictingSwapIds: conflictingSwaps.map(s => s._id.toString()),
+        conflictingCount: conflictingSwaps.length,
+      }
+    );
+  }
+
+  return { hasConflict: false, conflictingSwaps: [] };
 }
 
 /**
@@ -371,6 +453,7 @@ module.exports = {
   ReservationConflictError,
   isTransactionSupported,
   withTransaction,
+  assertNoAcceptedSwapConflicts,
   acquireReservations,
   releaseReservations,
   getActiveReservations,

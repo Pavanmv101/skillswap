@@ -6,6 +6,7 @@ const {
   acquireReservations,
   releaseReservations,
   withTransaction,
+  assertNoAcceptedSwapConflicts,
   ReservationConflictError,
 } = require('../services/reservationService');
 
@@ -144,7 +145,14 @@ exports.acceptSwapRequest = async (req, res) => {
       const fromUserId = swap.fromUser._id || swap.fromUser;
       const toUserId = swap.toUser._id || swap.toUser;
 
-      // Acquire shared reservations for both participants atomically
+      // Layer 1: Check for existing accepted bilateral swaps involving either participant
+      await assertNoAcceptedSwapConflicts({
+        participantIds: [fromUserId, toUserId],
+        excludeSwapId: swap._id,
+        session,
+      });
+
+      // Layer 2: Acquire shared reservations for both participants atomically
       try {
         await acquireReservations({
           reservations: [
