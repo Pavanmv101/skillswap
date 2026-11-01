@@ -394,7 +394,7 @@ export default function Room() {
           <div className="webrtc-room-info">
             <span className={`webrtc-status-dot ${hasRemoteVideo ? 'status-connected' : 'status-waiting'}`} />
             <strong>WebRTC P2P Session</strong>
-            <span className="room-id-tag">Room: {roomId.slice(0, 18)}...</span>
+            <span className="room-id-tag">Room: {roomId ? `${roomId.slice(0, 18)}${roomId.length > 18 ? '…' : ''}` : 'Session'}</span>
           </div>
         </div>
 
@@ -435,14 +435,29 @@ export default function Room() {
 
           {!hasRemoteVideo && (
             <div className="webrtc-waiting-overlay">
-              <div className="waiting-spinner-pulse" />
-              <h3>Waiting for partner to join...</h3>
-              <p style={{ color: 'var(--text-subtle)', fontSize: '.88rem', maxWidth: 440, margin: '.5rem auto 1.25rem' }}>
-                Both students join this room for a direct peer-to-peer WebRTC connection.
-              </p>
-              <button className="btn btn-primary btn-sm shadow-glow" onClick={copyLink}>
-                📋 Copy Invite Link
-              </button>
+              {permissionError ? (
+                <>
+                  <div style={{ fontSize: '3rem', marginBottom: '0.75rem' }}>🚫</div>
+                  <h3>Session Access Denied</h3>
+                  <p style={{ color: 'var(--text-subtle)', fontSize: '.88rem', maxWidth: 440, margin: '.5rem auto 1.25rem', lineHeight: 1.5 }}>
+                    {permissionError}
+                  </p>
+                  <Link to="/swaps" className="btn btn-primary btn-sm shadow-glow">
+                    ← Back to My Swaps
+                  </Link>
+                </>
+              ) : (
+                <>
+                  <div className="waiting-spinner-pulse" />
+                  <h3>Waiting for partner to join...</h3>
+                  <p style={{ color: 'var(--text-subtle)', fontSize: '.88rem', maxWidth: 440, margin: '.5rem auto 1.25rem' }}>
+                    Both students join this room for a direct peer-to-peer WebRTC connection.
+                  </p>
+                  <button className="btn btn-primary btn-sm shadow-glow" onClick={copyLink}>
+                    📋 Copy Invite Link
+                  </button>
+                </>
+              )}
             </div>
           )}
 

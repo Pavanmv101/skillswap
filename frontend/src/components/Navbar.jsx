@@ -67,6 +67,19 @@ export default function Navbar() {
       return
     }
 
+    if (n.type?.startsWith('CIRCULAR_')) {
+      if (n.type === 'CIRCULAR_SWAP_PROPOSED' || n.type === 'CIRCULAR_INVITATION_RECEIVED') {
+        navigate('/swaps?mode=circular&tab=invitations')
+      } else if (n.type === 'CIRCULAR_EXCHANGE_COMPLETED' || n.type === 'CIRCULAR_SWAP_COMPLETED' || n.type === 'CIRCULAR_EXCHANGE_FINALIZED') {
+        navigate('/swaps?mode=circular&tab=completed')
+      } else if (n.type === 'CIRCULAR_SWAP_DECLINED' || n.type === 'CIRCULAR_SWAP_CANCELLED' || n.type === 'CIRCULAR_PROPOSAL_DECLINED') {
+        navigate('/swaps?mode=circular&tab=history')
+      } else {
+        navigate('/swaps?mode=circular&tab=active')
+      }
+      return
+    }
+
     if (n.relatedSwap) {
       if (n.relatedSwap.status === 'accepted' && n.relatedSwap.roomId && n.type === 'SESSION_REMINDER') {
         navigate(`/room/${n.relatedSwap.roomId}`)

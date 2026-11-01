@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import api from '../api/axios'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
@@ -8,6 +8,8 @@ import RatingModal from '../components/RatingModal'
 import ScheduleModal from '../components/ScheduleModal'
 import Avatar from '../components/Avatar'
 import CircularExchangeCard from '../components/CircularExchangeCard'
+import CircularScheduleModal from '../components/CircularScheduleModal'
+import CircularCompletionModal from '../components/CircularCompletionModal'
 
 const STATUS_COLORS = {
   pending:   { bg: '#fffbeb', text: '#b45309', border: '#fde68a' },
@@ -38,6 +40,8 @@ export default function Swaps() {
   const [circularLoading, setCircularLoading]     = useState(false)
   const [circularError, setCircularError]         = useState('')
   const [circularTab, setCircularTab]             = useState('invitations')
+  const [circularScheduleTarget, setCircularScheduleTarget] = useState(null)
+  const [circularCompletionTarget, setCircularCompletionTarget] = useState(null)
 
   const uid = user?._id || user?.id
   const uidStr = uid ? String(uid) : ''
@@ -48,6 +52,22 @@ export default function Swaps() {
     isMountedRef.current = true
     return () => { isMountedRef.current = false }
   }, [])
+
+  const [searchParams] = useSearchParams()
+
+  // ── Sync Mode and Tab from URL Query Parameters ──
+  useEffect(() => {
+    const urlMode = searchParams.get('mode')
+    const urlTab = searchParams.get('tab')
+    if (urlMode === 'circular' || urlMode === 'bilateral') {
+      setMode(urlMode)
+    }
+    if (urlMode === 'circular' && urlTab && ['invitations', 'pending', 'active', 'completed', 'history'].includes(urlTab)) {
+      setCircularTab(urlTab)
+    } else if (urlMode === 'bilateral' && urlTab && ['received', 'sent', 'active', 'completed', 'archived'].includes(urlTab)) {
+      setTab(urlTab)
+    }
+  }, [searchParams])
 
   // ── Load Bilateral Swaps ──
   async function loadSwaps() {
@@ -570,10 +590,46 @@ export default function Swaps() {
                   currentUserId={uidStr}
                   onAccept={handleAcceptCircular}
                   onDecline={handleDeclineCircular}
+                  onOpenSchedule={(selectedEx, legIdx) => {
+                    setCircularScheduleTarget({
+                      exchangeId: selectedEx._id,
+                      legIndex: legIdx,
+                    })
+                  }}
+                  onOpenCompletion={(selectedEx, legIdx) => {
+                    setCircularCompletionTarget({
+                      exchangeId: selectedEx._id,
+                      legIndex: legIdx,
+                    })
+                  }}
                   actionLoading={actionLoading}
                 />
               ))}
             </div>
+          )}
+
+          {/* Circular Schedule Modal */}
+          {circularScheduleTarget && (
+            <CircularScheduleModal
+              exchangeId={circularScheduleTarget.exchangeId}
+              legIndex={circularScheduleTarget.legIndex}
+              onClose={() => setCircularScheduleTarget(null)}
+              onScheduleUpdated={async () => {
+                await loadCircularExchanges()
+              }}
+            />
+          )}
+
+          {/* Circular Completion Modal */}
+          {circularCompletionTarget && (
+            <CircularCompletionModal
+              exchangeId={circularCompletionTarget.exchangeId}
+              legIndex={circularCompletionTarget.legIndex}
+              onClose={() => setCircularCompletionTarget(null)}
+              onCompletionUpdated={async () => {
+                await loadCircularExchanges()
+              }}
+            />
           )}
         </>
       )}

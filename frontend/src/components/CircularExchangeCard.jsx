@@ -20,7 +20,7 @@ const STATUS_CONFIG = {
 const LEG_STATUS_CONFIG = {
   pending:           { bg: '#f9fafb', text: '#6b7280', border: '#e5e7eb', label: 'Pending' },
   scheduled:         { bg: '#eff6ff', text: '#1d4ed8', border: '#bfdbfe', label: 'Scheduled' },
-  teacher_completed: { bg: '#fef3c7', text: '#92400e', border: '#fde68a', label: 'Teacher Done' },
+  teacher_completed: { bg: '#fef3c7', text: '#92400e', border: '#fde68a', label: 'Awaiting Confirmation' },
   completed:         { bg: '#ecfdf5', text: '#047857', border: '#a7f3d0', label: 'Completed' },
   cancelled:         { bg: '#fef2f2', text: '#b91c1c', border: '#fecaca', label: 'Cancelled' },
 }
@@ -30,6 +30,8 @@ export default function CircularExchangeCard({
   currentUserId,
   onAccept,
   onDecline,
+  onOpenSchedule,
+  onOpenCompletion,
   actionLoading,
 }) {
   const [showDeclineConfirm, setShowDeclineConfirm] = useState(false)
@@ -195,15 +197,17 @@ export default function CircularExchangeCard({
               const isMyTeach = String(leg.teacher?._id || leg.teacher) === uidStr
               const isMyLearn = String(leg.learner?._id || leg.learner) === uidStr
               const legStatus = LEG_STATUS_CONFIG[leg.status] || LEG_STATUS_CONFIG.pending
+              const legIdx = leg.legIndex ?? i
+              const isPendingProposal = leg.scheduleProposal && leg.scheduleProposal.status === 'pending_confirmation'
 
               return (
                 <div
-                  key={leg.legIndex ?? i}
+                  key={legIdx}
                   style={{
                     display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.5rem',
-                    padding: '0.5rem 0.75rem',
+                    flexDirection: 'column',
+                    gap: '0.45rem',
+                    padding: '0.65rem 0.85rem',
                     borderRadius: '6px',
                     background: isMyTeach
                       ? '#ecfdf5'
@@ -213,53 +217,222 @@ export default function CircularExchangeCard({
                     border: (isMyTeach || isMyLearn)
                       ? `1px solid ${isMyTeach ? '#059669' : '#2563eb'}33`
                       : '1px solid var(--border)',
-                    flexWrap: 'wrap',
                     fontSize: '0.82rem',
                   }}
                 >
-                  {/* Teacher */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                    <Avatar name={leg.teacher?.name || 'Teacher'} size={24} />
-                    <span style={{ fontWeight: 600 }}>
-                      {leg.teacher?.name} {isMyTeach && <span style={{ color: '#059669', fontSize: '0.72rem' }}>(You)</span>}
-                    </span>
+                  {/* Top row: Teacher -> Skill -> Learner + Status */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    {/* Teacher */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <Avatar name={leg.teacher?.name || 'Teacher'} size={24} />
+                      <span style={{ fontWeight: 600 }}>
+                        {leg.teacher?.name} {isMyTeach && <span style={{ color: '#059669', fontSize: '0.72rem' }}>(You)</span>}
+                      </span>
+                    </div>
+
+                    {/* Direction Arrow & Skill */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', flex: '1 1 auto', minWidth: '140px', justifyContent: 'center' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>teaches</span>
+                      <span className="tag tag-highlight" style={{ fontSize: '0.75rem' }}>
+                        {leg.skill}
+                        <small style={{ opacity: 0.7, marginLeft: '0.2rem' }}>
+                          ({leg.teacherLevel}{leg.learnerLevel ? ` → ${leg.learnerLevel}` : ''})
+                        </small>
+                      </span>
+                      <span style={{ color: 'var(--text-muted)' }}>to →</span>
+                    </div>
+
+                    {/* Learner */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <Avatar name={leg.learner?.name || 'Learner'} size={24} />
+                      <span style={{ fontWeight: 600 }}>
+                        {leg.learner?.name} {isMyLearn && <span style={{ color: '#2563eb', fontSize: '0.72rem' }}>(You)</span>}
+                      </span>
+                    </div>
+
+                    {/* Leg Status */}
+                    {exchange.status !== 'proposed' && (
+                      <span
+                        className="badge"
+                        style={{
+                          marginLeft: 'auto',
+                          background: legStatus.bg,
+                          color: legStatus.text,
+                          border: `1px solid ${legStatus.border}`,
+                          fontSize: '0.7rem',
+                          padding: '0.15rem 0.45rem',
+                        }}
+                      >
+                        {legStatus.label}
+                      </span>
+                    )}
                   </div>
 
-                  {/* Direction Arrow & Skill */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', flex: '1 1 auto', minWidth: '140px', justifyContent: 'center' }}>
-                    <span style={{ color: 'var(--text-muted)' }}>teaches</span>
-                    <span className="tag tag-highlight" style={{ fontSize: '0.75rem' }}>
-                      {leg.skill}
-                      <small style={{ opacity: 0.7, marginLeft: '0.2rem' }}>
-                        ({leg.teacherLevel}{leg.learnerLevel ? ` → ${leg.learnerLevel}` : ''})
-                      </small>
-                    </span>
-                    <span style={{ color: 'var(--text-muted)' }}>to →</span>
-                  </div>
-
-                  {/* Learner */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                    <Avatar name={leg.learner?.name || 'Learner'} size={24} />
-                    <span style={{ fontWeight: 600 }}>
-                      {leg.learner?.name} {isMyLearn && <span style={{ color: '#2563eb', fontSize: '0.72rem' }}>(You)</span>}
-                    </span>
-                  </div>
-
-                  {/* Leg Status (visible when active or completed) */}
+                  {/* Bottom row: Schedule details & Role-based action buttons */}
                   {exchange.status !== 'proposed' && (
-                    <span
-                      className="badge"
+                    <div
                       style={{
-                        marginLeft: 'auto',
-                        background: legStatus.bg,
-                        color: legStatus.text,
-                        border: `1px solid ${legStatus.border}`,
-                        fontSize: '0.7rem',
-                        padding: '0.15rem 0.45rem',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        flexWrap: 'wrap',
+                        gap: '0.5rem',
+                        paddingTop: '0.35rem',
+                        borderTop: '1px dashed var(--border)',
+                        fontSize: '0.78rem',
                       }}
                     >
-                      {legStatus.label}
-                    </span>
+                      {/* Schedule info & proposal pill */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                        {leg.scheduledAt ? (
+                          <span style={{ color: '#065f46', fontWeight: 500 }}>
+                            📅 {new Date(leg.scheduledAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                          </span>
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)' }}>
+                            📅 Not yet scheduled
+                          </span>
+                        )}
+
+                        {isPendingProposal && (
+                          <span
+                            className="badge"
+                            style={{
+                              background: '#fffbeb',
+                              color: '#b45309',
+                              border: '1px solid #fde68a',
+                              fontSize: '0.7rem',
+                              padding: '0.15rem 0.4rem',
+                            }}
+                          >
+                            ⏳ {leg.scheduledAt ? 'Reschedule Proposed' : 'Schedule Proposed'}
+                            {isMyLearn && ' (Action Required)'}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Role-based actions for active exchange */}
+                      {exchange.status === 'active' && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginLeft: 'auto' }}>
+                          {/* Teacher Actions */}
+                          {isMyTeach && (
+                            <>
+                              {!leg.scheduledAt && !isPendingProposal && (
+                                <button
+                                  type="button"
+                                  className="btn btn-primary btn-sm"
+                                  onClick={() => onOpenSchedule && onOpenSchedule(exchange, legIdx)}
+                                >
+                                  📅 Schedule Session
+                                </button>
+                              )}
+                              {isPendingProposal && (
+                                <button
+                                  type="button"
+                                  className="btn btn-outline btn-sm"
+                                  onClick={() => onOpenSchedule && onOpenSchedule(exchange, legIdx)}
+                                >
+                                  ✏️ Edit Proposal
+                                </button>
+                              )}
+                              {leg.scheduledAt && !isPendingProposal && leg.status !== 'teacher_completed' && leg.status !== 'completed' && (
+                                <button
+                                  type="button"
+                                  className="btn btn-outline btn-sm"
+                                  onClick={() => onOpenSchedule && onOpenSchedule(exchange, legIdx)}
+                                >
+                                  🔄 Reschedule
+                                </button>
+                              )}
+                              {leg.status === 'scheduled' && (
+                                <button
+                                  type="button"
+                                  className="btn btn-primary btn-sm shadow-glow"
+                                  onClick={() => onOpenCompletion && onOpenCompletion(exchange, legIdx)}
+                                >
+                                  🎓 Mark Completed
+                                </button>
+                              )}
+                              {leg.status === 'teacher_completed' && (
+                                <button
+                                  type="button"
+                                  className="btn btn-muted btn-sm"
+                                  onClick={() => onOpenCompletion && onOpenCompletion(exchange, legIdx)}
+                                >
+                                  ⏳ Awaiting Confirmation
+                                </button>
+                              )}
+                              {leg.status === 'completed' && (
+                                <span style={{ color: '#047857', fontWeight: 600, fontSize: '0.78rem' }}>
+                                  ✅ Leg Completed
+                                </span>
+                              )}
+                            </>
+                          )}
+
+                          {/* Learner Actions */}
+                          {isMyLearn && (
+                            <>
+                              {isPendingProposal && (
+                                <button
+                                  type="button"
+                                  className="btn btn-primary btn-sm shadow-glow"
+                                  onClick={() => onOpenSchedule && onOpenSchedule(exchange, legIdx)}
+                                >
+                                  🔔 Review Schedule
+                                </button>
+                              )}
+                              {leg.status === 'teacher_completed' && (
+                                <button
+                                  type="button"
+                                  className="btn btn-primary btn-sm shadow-glow"
+                                  onClick={() => onOpenCompletion && onOpenCompletion(exchange, legIdx)}
+                                >
+                                  ⭐ Confirm Completion
+                                </button>
+                              )}
+                              {leg.scheduledAt && !isPendingProposal && leg.status !== 'teacher_completed' && leg.status !== 'completed' && (
+                                <button
+                                  type="button"
+                                  className="btn btn-outline btn-sm"
+                                  onClick={() => onOpenSchedule && onOpenSchedule(exchange, legIdx)}
+                                >
+                                  📅 View Schedule
+                                </button>
+                              )}
+                              {leg.status === 'completed' && (
+                                <span style={{ color: '#047857', fontWeight: 600, fontSize: '0.78rem' }}>
+                                  ✅ Leg Completed
+                                </span>
+                              )}
+                              {!leg.scheduledAt && !isPendingProposal && (
+                                <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', fontStyle: 'italic' }}>
+                                  Awaiting teacher proposal
+                                </span>
+                              )}
+                            </>
+                          )}
+
+                          {/* Observer completion view */}
+                          {!isMyTeach && !isMyLearn && leg.status === 'completed' && (
+                            <span style={{ color: '#047857', fontWeight: 600, fontSize: '0.78rem' }}>
+                              ✅ Leg Completed
+                            </span>
+                          )}
+
+                          {/* Join Video Call (Authorized participants: teacher or learner) */}
+                          {(isMyTeach || isMyLearn) && leg.roomId && (leg.status === 'scheduled' || leg.scheduledAt) && (
+                            <Link
+                              to={`/room/${leg.roomId}`}
+                              className="btn btn-primary btn-sm shadow-glow"
+                              style={{ padding: '0.2rem 0.55rem', fontSize: '0.75rem' }}
+                            >
+                              🎥 Join Call
+                            </Link>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
               )
