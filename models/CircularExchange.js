@@ -74,6 +74,73 @@ const circularLegSchema = new mongoose.Schema(
       ref: 'SwapRequest',
       default: null,
     },
+    scheduleProposal: {
+      proposedTime: {
+        type: Date,
+        default: null,
+      },
+      proposedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        default: null,
+      },
+      proposedAt: {
+        type: Date,
+        default: null,
+      },
+      status: {
+        type: String,
+        enum: ['none', 'pending_confirmation', 'confirmed', 'rejected'],
+        default: 'none',
+      },
+      rejectionReason: {
+        type: String,
+        default: '',
+        maxlength: 500,
+        trim: true,
+      },
+      respondedAt: {
+        type: Date,
+        default: null,
+      },
+    },
+    scheduleHistory: [
+      {
+        scheduledTime: {
+          type: Date,
+          required: true,
+        },
+        proposedBy: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'User',
+          required: true,
+        },
+        proposedAt: {
+          type: Date,
+          default: Date.now,
+        },
+        status: {
+          type: String,
+          enum: ['confirmed', 'rejected', 'superseded'],
+          required: true,
+        },
+        actionBy: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'User',
+          default: null,
+        },
+        actionAt: {
+          type: Date,
+          default: Date.now,
+        },
+        notes: {
+          type: String,
+          default: '',
+          maxlength: 500,
+          trim: true,
+        },
+      },
+    ],
   },
   { _id: true, timestamps: true }
 );

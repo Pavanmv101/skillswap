@@ -23,10 +23,23 @@ const {
   declineCircularInvitation,
 } = require('../controllers/circularProposalController');
 
+const {
+  getCircularSchedule,
+  proposeLegSchedule,
+  confirmLegSchedule,
+  rejectLegSchedule,
+} = require('../controllers/circularSchedulingController');
+
 router.post('/proposals',             protect, createCircularProposal);
 router.get('/proposals',              protect, getCircularProposals);
 router.get('/proposals/:id',          protect, getCircularProposalById);
 router.put('/proposals/:id/accept',   protect, acceptCircularInvitation);
 router.put('/proposals/:id/decline',  protect, declineCircularInvitation);
+
+// Phase 6 Substage 3.4.1: Independent Circular Leg Scheduling & Rescheduling
+router.get('/:id/schedule',                              protect, getCircularSchedule);
+router.post('/:id/legs/:legIndex/schedule/propose',      protect, proposeLegSchedule);
+router.put('/:id/legs/:legIndex/schedule/confirm',       protect, confirmLegSchedule);
+router.put('/:id/legs/:legIndex/schedule/reject',        protect, rejectLegSchedule);
 
 module.exports = router;
