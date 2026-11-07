@@ -9,20 +9,20 @@ export default function ScoreBadge({ score, className = '', style = {} }) {
   let label, color, bg
   if (s >= 80) {
     label = 'Excellent Match'
-    color = '#059669'
-    bg    = '#ecfdf5'
+    color = '#10b981'
+    bg    = 'rgba(16, 185, 129, 0.12)'
   } else if (s >= 55) {
     label = 'Good Match'
-    color = '#2563eb'
-    bg    = '#eff6ff'
+    color = '#6366f1'
+    bg    = 'rgba(99, 102, 241, 0.12)'
   } else if (s >= 30) {
     label = 'Fair Match'
-    color = '#d97706'
-    bg    = '#fffbeb'
+    color = '#f59e0b'
+    bg    = 'rgba(245, 158, 11, 0.12)'
   } else {
     label = 'Low Match'
-    color = '#6b7280'
-    bg    = '#f9fafb'
+    color = 'var(--text-muted)'
+    bg    = 'var(--surface-subtle)'
   }
 
   return (

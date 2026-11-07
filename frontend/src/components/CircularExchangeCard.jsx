@@ -10,19 +10,19 @@ import Avatar from './Avatar'
 import Stars from './Stars'
 
 const STATUS_CONFIG = {
-  proposed:  { bg: '#fffbeb', text: '#b45309', border: '#fde68a', label: 'Proposed' },
-  active:    { bg: '#ecfdf5', text: '#065f46', border: '#a7f3d0', label: 'Active Exchange' },
-  completed: { bg: '#eff6ff', text: '#1e40af', border: '#bfdbfe', label: 'Completed' },
-  cancelled: { bg: '#fef2f2', text: '#991b1b', border: '#fecaca', label: 'Declined / Cancelled' },
-  expired:   { bg: '#f1f5f9', text: '#475569', border: '#e2e8f0', label: 'Expired' },
+  proposed:  { bg: 'rgba(245, 158, 11, 0.12)', text: '#f59e0b', border: 'rgba(245, 158, 11, 0.3)', label: 'Proposed' },
+  active:    { bg: 'rgba(16, 185, 129, 0.12)', text: '#10b981', border: 'rgba(16, 185, 129, 0.3)', label: 'Active Exchange' },
+  completed: { bg: 'rgba(99, 102, 241, 0.12)', text: 'var(--primary)', border: 'rgba(99, 102, 241, 0.3)', label: 'Completed' },
+  cancelled: { bg: 'rgba(239, 68, 68, 0.12)', text: '#ef4444', border: 'rgba(239, 68, 68, 0.3)', label: 'Declined / Cancelled' },
+  expired:   { bg: 'rgba(148, 163, 184, 0.15)', text: 'var(--text-muted)', border: 'var(--border)', label: 'Expired' },
 }
 
 const LEG_STATUS_CONFIG = {
-  pending:           { bg: '#f9fafb', text: '#6b7280', border: '#e5e7eb', label: 'Pending' },
-  scheduled:         { bg: '#eff6ff', text: '#1d4ed8', border: '#bfdbfe', label: 'Scheduled' },
-  teacher_completed: { bg: '#fef3c7', text: '#92400e', border: '#fde68a', label: 'Awaiting Confirmation' },
-  completed:         { bg: '#ecfdf5', text: '#047857', border: '#a7f3d0', label: 'Completed' },
-  cancelled:         { bg: '#fef2f2', text: '#b91c1c', border: '#fecaca', label: 'Cancelled' },
+  pending:           { bg: 'rgba(148, 163, 184, 0.12)', text: 'var(--text-muted)', border: 'var(--border)', label: 'Pending' },
+  scheduled:         { bg: 'rgba(59, 130, 246, 0.12)', text: '#3b82f6', border: 'rgba(59, 130, 246, 0.3)', label: 'Scheduled' },
+  teacher_completed: { bg: 'rgba(245, 158, 11, 0.12)', text: '#f59e0b', border: 'rgba(245, 158, 11, 0.3)', label: 'Awaiting Confirmation' },
+  completed:         { bg: 'rgba(16, 185, 129, 0.12)', text: '#10b981', border: 'rgba(16, 185, 129, 0.3)', label: 'Completed' },
+  cancelled:         { bg: 'rgba(239, 68, 68, 0.12)', text: '#ef4444', border: 'rgba(239, 68, 68, 0.3)', label: 'Cancelled' },
 }
 
 export default function CircularExchangeCard({

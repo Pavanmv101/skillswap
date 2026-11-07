@@ -1,47 +1,86 @@
+import React from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import {
+  IconLogo,
+  IconArrowRight,
+  IconDiscover,
+  IconSwaps,
+  IconCalendar,
+  IconLearning,
+  IconShield,
+  IconRepeat,
+  IconBookOpen,
+  IconAward,
+  IconUsers,
+  IconCheckCircle,
+  IconVideo
+} from '../components/Icons'
 
-const HOW_IT_WORKS = [
+const CORE_STEPS = [
   {
     step: '01',
-    title: 'List Your Skills',
-    desc: 'Share what you excel at — coding, music, design, languages — and tell us what you are eager to learn next.',
-    icon: '🎯'
+    icon: IconDiscover,
+    title: 'Discover Complementary Peers',
+    desc: 'Our bidirectional scoring algorithm analyzes your taught and wanted skills, finding peers who need what you know and teach what you seek.'
   },
   {
     step: '02',
-    title: 'Instant Smart Match',
-    desc: 'Our bidirectional scoring algorithm pairs you with peers based on reciprocal skill interests and overlapping schedules.',
-    icon: '⚡'
+    icon: IconRepeat,
+    title: 'Exchange Knowledge Without Money',
+    desc: 'Pure peer-to-peer barter. Every hour you spend teaching earns you an hour of focused learning. No transaction fees, credits, or subscriptions.'
   },
   {
     step: '03',
-    title: 'Barter & Learn Live',
-    desc: 'Connect via native WebRTC peer-to-peer video — zero latency, zero fees, no third-party relay. Just you and your peer.',
-    icon: '🚀'
+    icon: IconCalendar,
+    title: 'Coordinate Overlapping Schedules',
+    desc: 'Compare weekly recurring availability windows to pinpoint mutual free times automatically, preventing tedious back-and-forth scheduling.'
+  },
+  {
+    step: '04',
+    icon: IconBookOpen,
+    title: 'Track Structured Roadmaps',
+    desc: 'Follow curated learning tracks with milestone checklists, resource recommendations, and interactive assessment quizzes to measure real progress.'
+  },
+  {
+    step: '05',
+    icon: IconAward,
+    title: 'Build Verifiable Credibility',
+    desc: 'Earn post-swap endorsements, showcase project proofs, and obtain administrator-reviewed skill credentials that peers can trust.'
   }
 ]
 
-const FEATURES = [
-  { icon: '🤝', title: 'Bidirectional Matching', desc: 'Score up to 100 pts based on mutual skill overlap, so both partners always benefit equally.' },
-  { icon: '📅', title: 'Schedule Overlap Detection', desc: 'We compare weekly availability slots to surface peers who are actually free when you are.' },
-  { icon: '🎥', title: 'Native WebRTC Video', desc: 'Browser-to-browser P2P video using RTCPeerConnection — no plugins, no third-party SDK, no cost.' },
-  { icon: '⭐', title: 'Post-Session Ratings', desc: 'Rate your peer after each swap. Reputation drives quality and trust across the network.' },
-  { icon: '🔒', title: 'JWT Auth & Security', desc: 'Secure token-based authentication with bcrypt password hashing and protected API routes.' },
-  { icon: '📊', title: 'Transparent Scoring', desc: 'See exactly why you matched — forward skill points, reverse bonus, and schedule boost explained clearly.' },
-]
-
-const TESTIMONIALS = [
-  { name: 'Aarav S.', skill: 'React Developer', text: 'I traded React lessons for Python ML sessions with Priya. SkillSwap made the whole process seamless — from matching to video call in minutes!', score: 100 },
-  { name: 'Priya P.', skill: 'Data Scientist', text: 'The compatibility score was spot-on. Found my perfect learning partner in seconds. The WebRTC video is incredibly smooth.', score: 98 },
-  { name: 'Rohan M.', skill: 'UI/UX Designer', text: "As a designer learning guitar, I never thought I'd find a music teacher to swap with. SkillSwap matched me with exactly the right peer.", score: 85 },
-]
-
-const STATS = [
-  { num: '100%', label: 'Free Peer Exchange' },
-  { num: '< 1s', label: 'WebRTC Connect Time' },
-  { num: '100 pts', label: 'Transparent Match Score' },
-  { num: '4.9★', label: 'Average Peer Rating' },
+const CAPABILITIES = [
+  {
+    icon: IconSwaps,
+    title: 'Bidirectional Matching',
+    desc: 'Calculates reciprocal affinity up to 100 points, prioritizing exact skill overlaps and balanced learning levels.'
+  },
+  {
+    icon: IconRepeat,
+    title: '3-Way Circular Cycles',
+    desc: 'When direct 2-way swaps hit deadlocks, our engine discovers closed 3-person barter loops where everyone teaches and learns.'
+  },
+  {
+    icon: IconVideo,
+    title: 'Native WebRTC Video Rooms',
+    desc: 'Direct browser-to-browser peer calling with low latency, screen sharing, device selection, and zero required downloads.'
+  },
+  {
+    icon: IconShield,
+    title: 'Peer Trust & Verification',
+    desc: 'Community ratings, attendance reliability tracking, and institutional credential reviews guarantee focused, safe exchanges.'
+  },
+  {
+    icon: IconLearning,
+    title: 'Curated Learning Roadmaps',
+    desc: 'Structured curricula across software engineering, data science, creative design, languages, and technical disciplines.'
+  },
+  {
+    icon: IconCalendar,
+    title: 'Mutual Slot Detection',
+    desc: 'Instant visualization of overlapping hours across different timezones, synchronizing both participants with one click.'
+  }
 ]
 
 export default function Landing() {
@@ -49,174 +88,351 @@ export default function Landing() {
 
   return (
     <div className="landing-wrapper">
-      {/* Hero Section */}
-      <section className="hero">
-        <div className="hero-content">
-          <div className="hero-badge">
-            <span className="pulse-dot"></span>
-            Peer-to-Peer Skill Barter System
+      {/* ─── Hero Section ────────────────────────────────────────────────────── */}
+      <section className="hero-section">
+        <div className="hero-container">
+          <div className="hero-pill-badge">
+            <span className="hero-pulse-dot" />
+            <span>Peer-to-Peer Knowledge Barter</span>
           </div>
-          <h1 className="hero-title">
-            Trade What You Know.<br />
-            <span className="gradient-text">Master What You Don't.</span>
+
+          <h1 className="hero-main-title">
+            Trade what you know.<br />
+            <span className="hero-gradient-text">Master what you don't.</span>
           </h1>
-          <p className="hero-sub">
-            The currency on SkillSwap is knowledge. Swap coding lessons for guitar sessions, UI design for Python data science, or language practice for academic prep — all powered by native WebRTC video.
+
+          <p className="hero-description">
+            SkillSwap is a pure peer-to-peer knowledge exchange. Connect with peers to trade coding lessons for design mentorship, language practice for data analysis, and technical skills — without monetary transactions.
           </p>
 
-          <div className="hero-actions">
+          <div className="hero-cta-group">
             {token ? (
               <Link to="/dashboard" className="btn btn-primary btn-lg shadow-glow">
-                Go to Dashboard →
+                Go to Workspace <IconArrowRight size={18} />
               </Link>
             ) : (
               <>
                 <Link to="/register" className="btn btn-primary btn-lg shadow-glow">
-                  Get Started Free
+                  Start Learning Free <IconArrowRight size={18} />
                 </Link>
-                <Link to="/login" className="btn btn-glass btn-lg">
-                  Sign In
-                </Link>
+                <a href="#how-it-works" className="btn btn-secondary btn-lg">
+                  Explore How It Works
+                </a>
               </>
             )}
           </div>
 
-          {/* Live Mockup Barter Card */}
-          <div className="hero-preview-card">
-            <div className="preview-header">
-              <div className="preview-user">
-                <div className="preview-avatar" style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}>AS</div>
-                <div>
-                  <strong>Aarav</strong>
-                  <div className="preview-sub">Teaches React & Node.js</div>
+          {/* ─── Live Barter Mockup Composition ───────────────────────────────── */}
+          <div className="hero-mockup-wrapper">
+            <div className="hero-mockup-card">
+              <div className="mockup-card-top">
+                <div className="mockup-profile">
+                  <div className="mockup-avatar avatar-indigo">AS</div>
+                  <div>
+                    <div className="mockup-name">Aarav Sharma</div>
+                    <div className="mockup-sub">Computer Science</div>
+                  </div>
                 </div>
-              </div>
-              <div className="preview-swap-badge">
-                <span className="badge-glow">⚡ 100% Match</span>
-              </div>
-              <div className="preview-user" style={{ textAlign: 'right' }}>
-                <div>
-                  <strong>Priya</strong>
-                  <div className="preview-sub">Teaches Python & ML</div>
-                </div>
-                <div className="preview-avatar" style={{ background: 'linear-gradient(135deg, #10b981, #059669)' }}>PP</div>
-              </div>
-            </div>
 
-            <div className="preview-barter-flow">
-              <div className="flow-item flow-offered">
-                <span>Offered:</span> <strong>React</strong>
+                <div className="mockup-score-badge">
+                  <span className="score-number">98</span>
+                  <span className="score-label">MATCH SCORE</span>
+                </div>
+
+                <div className="mockup-profile mockup-profile-right">
+                  <div>
+                    <div className="mockup-name">Priya Patel</div>
+                    <div className="mockup-sub">Data & Analytics</div>
+                  </div>
+                  <div className="mockup-avatar avatar-emerald">PP</div>
+                </div>
               </div>
-              <div className="flow-arrow">⇄</div>
-              <div className="flow-item flow-wanted">
-                <span>Received:</span> <strong>Python</strong>
+
+              {/* Barter Flow Exchange Bar */}
+              <div className="mockup-flow-grid">
+                <div className="mockup-flow-leg">
+                  <span className="leg-label">Aarav teaches</span>
+                  <div className="leg-skill-tag teach-tag">
+                    <span className="dot dot-indigo" /> React & TypeScript
+                  </div>
+                </div>
+
+                <div className="mockup-flow-icon" title="Bidirectional exchange">
+                  <IconSwaps size={22} />
+                </div>
+
+                <div className="mockup-flow-leg">
+                  <span className="leg-label">Priya teaches</span>
+                  <div className="leg-skill-tag learn-tag">
+                    <span className="dot dot-emerald" /> Python & Machine Learning
+                  </div>
+                </div>
               </div>
-            </div>
-            <div className="preview-footer">
-              <span>📅 Monday 18:00 – 20:00 (Schedule Overlap)</span>
-              <span className="preview-status">🎥 WebRTC Room Ready</span>
+
+              <div className="mockup-card-bottom">
+                <div className="mockup-detail-item">
+                  <IconCalendar size={15} />
+                  <span>Mutual Slot: <strong>Monday 18:00 – 19:30 UTC</strong></span>
+                </div>
+                <div className="mockup-detail-item status-live">
+                  <span className="status-indicator-dot" />
+                  <span>WebRTC P2P Video Active</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </section>
 
-      {/* Stats Counter Strip */}
-      <section className="stats-strip">
-        <div className="stats-strip-inner">
-          {STATS.map(s => (
-            <div className="strip-item" key={s.label}>
-              <div className="strip-num">{s.num}</div>
-              <div className="strip-label">{s.label}</div>
-            </div>
-          ))}
-        </div>
-      </section>
+      {/* ─── How It Works (5 Core Stages) ────────────────────────────────────── */}
+      <section id="how-it-works" className="landing-section">
+        <div className="section-container">
+          <div className="section-header-block">
+            <span className="section-pill">HOW IT WORKS</span>
+            <h2 className="section-heading">Frictionless peer learning in five stages</h2>
+            <p className="section-subheading">
+              Built specifically for autonomous learners and student peers who want structured, reliable collaboration.
+            </p>
+          </div>
 
-      {/* How it works */}
-      <section className="section-padding">
-        <div className="section-header">
-          <div className="section-tag">Simple & Effective</div>
-          <h2 className="section-title">How SkillSwap Works</h2>
-          <p className="section-desc">Experience frictionless skill exchange in three intuitive stages.</p>
-        </div>
-
-        <div className="how-it-works-grid">
-          {HOW_IT_WORKS.map(step => (
-            <div className="step-card" key={step.step}>
-              <div className="step-top">
-                <span className="step-icon">{step.icon}</span>
-                <span className="step-num">{step.step}</span>
-              </div>
-              <h3 className="step-title">{step.title}</h3>
-              <p className="step-desc">{step.desc}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* Features Grid */}
-      <section className="section-padding features-section">
-        <div className="section-header">
-          <div className="section-tag">Built Right</div>
-          <h2 className="section-title">Everything You Need</h2>
-          <p className="section-desc">A full-featured MERN stack platform engineered for real peer-to-peer skill exchange.</p>
-        </div>
-
-        <div className="features-grid">
-          {FEATURES.map(f => (
-            <div className="feature-card" key={f.title}>
-              <div className="feature-icon">{f.icon}</div>
-              <h4 className="feature-title">{f.title}</h4>
-              <p className="feature-desc">{f.desc}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* Testimonials */}
-      <section className="section-padding">
-        <div className="section-header">
-          <div className="section-tag">Community Voices</div>
-          <h2 className="section-title">What Peers Say</h2>
-          <p className="section-desc">Real experiences from students who found their learning partners on SkillSwap.</p>
-        </div>
-
-        <div className="testimonials-grid">
-          {TESTIMONIALS.map(t => (
-            <div className="testimonial-card" key={t.name}>
-              <div className="testimonial-header">
-                <div className="testimonial-avatar">
-                  {t.name.split(' ').map(n => n[0]).join('')}
+          <div className="steps-flow-container">
+            {CORE_STEPS.map((s, idx) => {
+              const Icon = s.icon
+              return (
+                <div className="step-flow-card" key={s.step}>
+                  <div className="step-card-header">
+                    <div className="step-icon-bubble">
+                      <Icon size={20} />
+                    </div>
+                    <span className="step-sequence-num">{s.step}</span>
+                  </div>
+                  <h3 className="step-card-title">{s.title}</h3>
+                  <p className="step-card-desc">{s.desc}</p>
                 </div>
-                <div>
-                  <div className="testimonial-name">{t.name}</div>
-                  <div className="testimonial-skill">{t.skill}</div>
-                </div>
-                <div className="testimonial-score">⚡ {t.score}%</div>
-              </div>
-              <p className="testimonial-text">"{t.text}"</p>
-              <div className="testimonial-stars">{'⭐'.repeat(5)}</div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* Bottom CTA */}
-      <section className="cta-banner">
-        <div className="cta-inner">
-          <div className="cta-badge">🚀 Start Learning Today</div>
-          <h2>Ready to Level Up Your Skills?</h2>
-          <p>Join fellow students exchanging skills right now. Free forever. No credit card required.</p>
-          <div style={{ marginTop: '1.75rem', display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>
-            <Link to={token ? "/matches" : "/register"} className="btn btn-primary btn-lg shadow-glow">
-              Explore Matches Now →
-            </Link>
-            <Link to="/login" className="btn btn-glass btn-lg">
-              Demo Login
-            </Link>
+              )
+            })}
           </div>
         </div>
       </section>
+
+      {/* ─── Advanced Exchange Architecture (Bilateral vs Circular) ─────────── */}
+      <section className="landing-section section-contrast">
+        <div className="section-container">
+          <div className="section-header-block">
+            <span className="section-pill">EXCHANGE ARCHITECTURE</span>
+            <h2 className="section-heading">Direct 1:1 and 3-way circular exchanges</h2>
+            <p className="section-subheading">
+              SkillSwap eliminates deadlocks. If a peer wants your skill but you need something they don't teach, our circular solver connects a third peer to complete the cycle.
+            </p>
+          </div>
+
+          <div className="exchange-comparison-grid">
+            {/* Bilateral Card */}
+            <div className="exchange-type-card">
+              <div className="exchange-card-badge">DIRECT PAIRING</div>
+              <h3 className="exchange-title">Bilateral 1:1 Swap</h3>
+              <p className="exchange-desc">
+                Ideal when two peers have complementary skill sets and matching availability.
+              </p>
+
+              <div className="exchange-visual-box">
+                <div className="node-item">
+                  <div className="node-avatar">A</div>
+                  <div className="node-meta">
+                    <strong>Peer A</strong>
+                    <span>Teaches React</span>
+                  </div>
+                </div>
+                <div className="exchange-arrows-bidirectional">
+                  <span>⇄</span>
+                  <small>Mutual barter</small>
+                </div>
+                <div className="node-item">
+                  <div className="node-avatar">B</div>
+                  <div className="node-meta">
+                    <strong>Peer B</strong>
+                    <span>Teaches Python</span>
+                  </div>
+                </div>
+              </div>
+
+              <ul className="exchange-features-list">
+                <li><IconCheckCircle size={16} /> Direct time-slot synchronization</li>
+                <li><IconCheckCircle size={16} /> Instant mutual confirmation</li>
+                <li><IconCheckCircle size={16} /> Private 1:1 WebRTC video room</li>
+              </ul>
+            </div>
+
+            {/* Circular Cycle Card */}
+            <div className="exchange-type-card exchange-card-highlight">
+              <div className="exchange-card-badge badge-brand">INNOVATION</div>
+              <h3 className="exchange-title">Three-Way Circular Cycle</h3>
+              <p className="exchange-desc">
+                Discovers closed three-person barter loops so no learner is left waiting for a direct match.
+              </p>
+
+              <div className="circular-visual-box">
+                <div className="circular-node-row">
+                  <div className="circle-node">
+                    <span className="circle-avatar">A</span>
+                    <small>Teaches React</small>
+                  </div>
+                  <div className="circle-vector">➔</div>
+                  <div className="circle-node">
+                    <span className="circle-avatar">B</span>
+                    <small>Teaches UI/UX</small>
+                  </div>
+                </div>
+                <div className="circular-return-row">
+                  <div className="circle-vector-up">↑</div>
+                  <div className="circle-vector-down">↓</div>
+                </div>
+                <div className="circular-node-center">
+                  <div className="circle-node">
+                    <span className="circle-avatar">C</span>
+                    <small>Teaches French</small>
+                  </div>
+                </div>
+              </div>
+
+              <ul className="exchange-features-list">
+                <li><IconCheckCircle size={16} /> Multi-party proposal management</li>
+                <li><IconCheckCircle size={16} /> Atomic slot reservation engine</li>
+                <li><IconCheckCircle size={16} /> Synchronized mutual completions</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ─── Platform Capabilities Grid ──────────────────────────────────────── */}
+      <section className="landing-section">
+        <div className="section-container">
+          <div className="section-header-block">
+            <span className="section-pill">SYSTEM CAPABILITIES</span>
+            <h2 className="section-heading">Engineered for serious peer collaboration</h2>
+            <p className="section-subheading">
+              Every feature is built around accountability, transparency, and high-impact learning.
+            </p>
+          </div>
+
+          <div className="capabilities-grid">
+            {CAPABILITIES.map((cap, i) => {
+              const Icon = cap.icon
+              return (
+                <div className="capability-card" key={cap.title}>
+                  <div className="capability-icon-wrap">
+                    <Icon size={22} />
+                  </div>
+                  <h4 className="capability-title">{cap.title}</h4>
+                  <p className="capability-desc">{cap.desc}</p>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* ─── Trust & Verification Section ───────────────────────────────────── */}
+      <section className="landing-section section-contrast">
+        <div className="section-container">
+          <div className="trust-banner-card">
+            <div className="trust-card-content">
+              <span className="section-pill">ACCOUNTABILITY</span>
+              <h2 className="trust-heading">Verified credibility and peer endorsements</h2>
+              <p className="trust-body">
+                SkillSwap maintains high standards through transparent reputation. Submit certificate proofs or portfolio links to earn official verification badges, receive post-session peer endorsements, and maintain reliable exchange metrics.
+              </p>
+              <div className="trust-points-grid">
+                <div className="trust-point">
+                  <IconShield size={18} />
+                  <span>Admin-audited skill verification</span>
+                </div>
+                <div className="trust-point">
+                  <IconAward size={18} />
+                  <span>Peer post-swap endorsements</span>
+                </div>
+                <div className="trust-point">
+                  <IconUsers size={18} />
+                  <span>Public reputation metrics</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ─── Bottom CTA Banner ──────────────────────────────────────────────── */}
+      <section className="landing-cta-banner">
+        <div className="section-container cta-container">
+          <div className="cta-content-box">
+            <h2 className="cta-main-title">Ready to exchange knowledge with peers?</h2>
+            <p className="cta-sub-title">
+              Set up your profile in minutes, list skills you can teach, and discover partners ready to barter learning.
+            </p>
+            <div className="cta-btn-row">
+              <Link to={token ? "/dashboard" : "/register"} className="btn btn-primary btn-lg shadow-glow">
+                Get Started Free <IconArrowRight size={18} />
+              </Link>
+              {!token && (
+                <Link to="/login" className="btn btn-secondary btn-lg">
+                  Sign In with Demo
+                </Link>
+              )}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ─── Professional SaaS Footer ────────────────────────────────────────── */}
+      <footer className="landing-footer">
+        <div className="section-container footer-container">
+          <div className="footer-top-row">
+            <div className="footer-brand-col">
+              <Link to="/" className="footer-brand">
+                <IconLogo size={26} />
+                <span className="brand-name">SkillSwap</span>
+              </Link>
+              <p className="footer-tagline">
+                Peer-to-peer knowledge barter platform. Exchange skills without monetary transactions.
+              </p>
+            </div>
+
+            <div className="footer-links-col">
+              <span className="footer-links-title">PLATFORM</span>
+              <Link to="/matches" className="footer-link">Discover Peers</Link>
+              <Link to="/recommendations" className="footer-link">Recommendation Engine</Link>
+              <Link to="/swaps" className="footer-link">Exchange Management</Link>
+              <Link to="/learning" className="footer-link">Learning Roadmaps</Link>
+            </div>
+
+            <div className="footer-links-col">
+              <span className="footer-links-title">EXCHANGE MODES</span>
+              <span className="footer-text-link">Bilateral 1:1 Barter</span>
+              <span className="footer-text-link">3-Way Circular Cycles</span>
+              <span className="footer-text-link">Native WebRTC Video</span>
+              <span className="footer-text-link">Mutual Slot Matching</span>
+            </div>
+
+            <div className="footer-links-col">
+              <span className="footer-links-title">TRUST & SAFETY</span>
+              <span className="footer-text-link">Admin Skill Verifications</span>
+              <span className="footer-text-link">Peer Endorsements</span>
+              <span className="footer-text-link">Reputation & Reviews</span>
+              <span className="footer-text-link">Strict Zero-Monetary Policy</span>
+            </div>
+          </div>
+
+          <div className="footer-bottom-row">
+            <div className="footer-copyright">
+              © {new Date().getFullYear()} SkillSwap Network. All rights reserved. Built with modern React & Node.js.
+            </div>
+            <div className="footer-legal">
+              <span className="footer-badge-pill">Production SaaS Edition</span>
+            </div>
+          </div>
+        </div>
+      </footer>
     </div>
   )
 }

@@ -51,13 +51,15 @@ export default function CircularCycleCard({ cycle, currentUserId, onPropose }) {
                 padding: '0.6rem 0.75rem',
                 borderRadius: '8px',
                 background: isMyTeaching
-                  ? '#ecfdf5'
+                  ? 'rgba(16, 185, 129, 0.12)'
                   : isMyLearning
-                    ? '#eff6ff'
-                    : '#f9fafb',
-                border: (isMyTeaching || isMyLearning)
-                  ? `1px solid ${isMyTeaching ? '#059669' : '#2563eb'}33`
-                  : '1px solid var(--border)',
+                    ? 'rgba(99, 102, 241, 0.12)'
+                    : 'var(--surface-subtle)',
+                border: isMyTeaching
+                  ? '1px solid rgba(16, 185, 129, 0.3)'
+                  : isMyLearning
+                    ? '1px solid rgba(99, 102, 241, 0.3)'
+                    : '1px solid var(--border)',
                 flexWrap: 'wrap',
               }}
             >
@@ -67,7 +69,7 @@ export default function CircularCycleCard({ cycle, currentUserId, onPropose }) {
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: '0.82rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {leg.teacher.name}
-                    {isMyTeaching && <span style={{ fontSize: '0.7rem', color: '#059669', marginLeft: '0.3rem' }}>(you)</span>}
+                    {isMyTeaching && <span style={{ fontSize: '0.7rem', color: '#10b981', marginLeft: '0.3rem' }}>(you)</span>}
                   </div>
                   <Stars value={leg.teacher.averageRating || 0} count={leg.teacher.totalRatings} />
                 </div>

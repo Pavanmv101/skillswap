@@ -194,15 +194,15 @@ export default function CircularCompletionModal({
             style={{
               padding: '1rem',
               borderRadius: '8px',
-              background: '#eff6ff',
-              border: '1px solid #bfdbfe',
+              background: 'rgba(99, 102, 241, 0.12)',
+              border: '1px solid rgba(99, 102, 241, 0.3)',
               marginBottom: '1.25rem',
               textAlign: 'center',
             }}
           >
             <div style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>🏆</div>
-            <h3 style={{ margin: '0 0 0.25rem', color: '#1e40af' }}>Exchange Fully Finalized!</h3>
-            <p style={{ margin: 0, fontSize: '0.85rem', color: '#1e3a8a' }}>
+            <h3 style={{ margin: '0 0 0.25rem', color: 'var(--primary)' }}>Exchange Fully Finalized!</h3>
+            <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-muted)' }}>
               All 3 exchange legs have been completed and confirmed by their respective learners.
               Credits and reliability ratings have been awarded to all participants!
             </p>
@@ -214,7 +214,7 @@ export default function CircularCompletionModal({
             {/* Leg Information Card */}
             <div
               style={{
-                background: '#f8fafc',
+                background: 'var(--surface-subtle)',
                 border: '1px solid var(--border)',
                 borderRadius: '8px',
                 padding: '0.85rem 1rem',
@@ -230,7 +230,7 @@ export default function CircularCompletionModal({
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                     <Avatar name={teacher?.name || 'Teacher'} size={24} />
                     <span style={{ fontWeight: 600 }}>
-                      {teacher?.name} {myRole === 'teacher' && <span style={{ color: '#059669', fontSize: '0.72rem' }}>(You)</span>}
+                      {teacher?.name} {myRole === 'teacher' && <span style={{ color: '#10b981', fontSize: '0.72rem' }}>(You)</span>}
                     </span>
                   </div>
                 </div>
@@ -242,7 +242,7 @@ export default function CircularCompletionModal({
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                     <Avatar name={learner?.name || 'Learner'} size={24} />
                     <span style={{ fontWeight: 600 }}>
-                      {learner?.name} {myRole === 'learner' && <span style={{ color: '#2563eb', fontSize: '0.72rem' }}>(You)</span>}
+                      {learner?.name} {myRole === 'learner' && <span style={{ color: '#3b82f6', fontSize: '0.72rem' }}>(You)</span>}
                     </span>
                   </div>
                 </div>
@@ -262,9 +262,9 @@ export default function CircularCompletionModal({
                   style={{
                     textTransform: 'capitalize',
                     fontSize: '0.72rem',
-                    background: legStatus === 'completed' ? '#ecfdf5' : legStatus === 'teacher_completed' ? '#fef3c7' : '#eff6ff',
-                    color: legStatus === 'completed' ? '#047857' : legStatus === 'teacher_completed' ? '#92400e' : '#1d4ed8',
-                    border: `1px solid ${legStatus === 'completed' ? '#a7f3d0' : legStatus === 'teacher_completed' ? '#fde68a' : '#bfdbfe'}`,
+                    background: legStatus === 'completed' ? 'rgba(16, 185, 129, 0.12)' : legStatus === 'teacher_completed' ? 'rgba(245, 158, 11, 0.12)' : 'rgba(59, 130, 246, 0.12)',
+                    color: legStatus === 'completed' ? '#10b981' : legStatus === 'teacher_completed' ? '#f59e0b' : '#3b82f6',
+                    border: `1px solid ${legStatus === 'completed' ? 'rgba(16, 185, 129, 0.3)' : legStatus === 'teacher_completed' ? 'rgba(245, 158, 11, 0.3)' : 'rgba(59, 130, 246, 0.3)'}`,
                   }}
                 >
                   {legStatus === 'teacher_completed' ? 'Awaiting Learner Confirmation' : legStatus?.replace('_', ' ')}
@@ -278,11 +278,11 @@ export default function CircularCompletionModal({
                 style={{
                   padding: '0.85rem 1rem',
                   borderRadius: '8px',
-                  background: '#ecfdf5',
-                  border: '1px solid #a7f3d0',
+                  background: 'rgba(16, 185, 129, 0.12)',
+                  border: '1px solid rgba(16, 185, 129, 0.3)',
                   marginBottom: '1rem',
                   fontSize: '0.85rem',
-                  color: '#065f46',
+                  color: '#10b981',
                 }}
               >
                 <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem', marginBottom: '0.25rem' }}>
@@ -337,11 +337,11 @@ export default function CircularCompletionModal({
                 )}
 
                 {legStatus === 'teacher_completed' && (
-                  <div style={{ padding: '0.85rem', borderRadius: '8px', background: '#fffbeb', border: '1px solid #fde68a', fontSize: '0.85rem' }}>
-                    <div style={{ fontWeight: 600, color: '#b45309', marginBottom: '0.35rem' }}>
+                  <div style={{ padding: '0.85rem', borderRadius: '8px', background: 'rgba(245, 158, 11, 0.12)', border: '1px solid rgba(245, 158, 11, 0.3)', fontSize: '0.85rem' }}>
+                    <div style={{ fontWeight: 600, color: '#f59e0b', marginBottom: '0.35rem' }}>
                       ⏳ Waiting for Learner Confirmation
                     </div>
-                    <p style={{ margin: 0, color: '#78350f', fontSize: '0.82rem', lineHeight: 1.4 }}>
+                    <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.82rem', lineHeight: 1.4 }}>
                       You marked this leg completed on{' '}
                       {legData.teacherCompletedAt ? new Date(legData.teacherCompletedAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'recently'}.
                       We have notified <strong>{learner?.name}</strong> to confirm the completion.
@@ -350,7 +350,7 @@ export default function CircularCompletionModal({
                 )}
 
                 {legStatus === 'active' && !legData.scheduledAt && (
-                  <div style={{ padding: '0.85rem', borderRadius: '8px', background: '#f8fafc', border: '1px solid var(--border)', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                  <div style={{ padding: '0.85rem', borderRadius: '8px', background: 'var(--surface-subtle)', border: '1px solid var(--border)', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
                     ℹ️ This leg must have a confirmed session time scheduled before it can be marked as completed.
                   </div>
                 )}
@@ -362,7 +362,7 @@ export default function CircularCompletionModal({
               <div style={{ borderTop: '1px solid var(--border)', paddingTop: '1rem', marginTop: '0.5rem' }}>
                 {legStatus === 'teacher_completed' ? (
                   <form onSubmit={handleLearnerConfirm}>
-                    <h4 style={{ margin: '0 0 0.35rem', fontSize: '0.95rem', color: '#047857' }}>
+                    <h4 style={{ margin: '0 0 0.35rem', fontSize: '0.95rem', color: '#10b981' }}>
                       ⭐ Confirm Session Completion
                     </h4>
                     <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', margin: '0 0 1rem', lineHeight: 1.4 }}>
@@ -393,7 +393,7 @@ export default function CircularCompletionModal({
                     </button>
                   </form>
                 ) : (
-                  <div style={{ padding: '0.85rem', borderRadius: '8px', background: '#f8fafc', border: '1px solid var(--border)', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                  <div style={{ padding: '0.85rem', borderRadius: '8px', background: 'var(--surface-subtle)', border: '1px solid var(--border)', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
                     ⏳ Once {teacher?.name || 'your teacher'} marks this session as completed after your lesson, you will be prompted to confirm completion here.
                   </div>
                 )}
@@ -420,7 +420,7 @@ export default function CircularCompletionModal({
                       style={{
                         padding: '0.35rem 0.6rem',
                         borderRadius: '6px',
-                        background: '#f8fafc',
+                        background: 'var(--surface-subtle)',
                         border: '1px solid var(--border)',
                         fontSize: '0.76rem',
                         display: 'flex',

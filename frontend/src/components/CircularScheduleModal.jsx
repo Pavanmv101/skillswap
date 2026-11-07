@@ -301,7 +301,7 @@ export default function CircularScheduleModal({
             {/* Participants & Timezone Summary Box */}
             <div
               style={{
-                background: '#f8fafc',
+                background: 'var(--surface-subtle)',
                 border: '1px solid var(--border)',
                 borderRadius: '8px',
                 padding: '0.85rem 1rem',
@@ -354,15 +354,15 @@ export default function CircularScheduleModal({
               style={{
                 padding: '0.75rem 1rem',
                 borderRadius: '8px',
-                background: legData.scheduledAt ? '#ecfdf5' : '#f9fafb',
-                border: `1px solid ${legData.scheduledAt ? '#a7f3d0' : 'var(--border)'}`,
+                background: legData.scheduledAt ? 'rgba(16, 185, 129, 0.12)' : 'var(--surface-subtle)',
+                border: `1px solid ${legData.scheduledAt ? 'rgba(16, 185, 129, 0.3)' : 'var(--border)'}`,
                 marginBottom: '1.25rem',
                 fontSize: '0.85rem',
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
                 <div>
-                  <strong style={{ color: legData.scheduledAt ? '#065f46' : 'var(--text-muted)' }}>
+                  <strong style={{ color: legData.scheduledAt ? '#10b981' : 'var(--text-muted)' }}>
                     {legData.scheduledAt ? '✅ Current Confirmed Session:' : '⏳ Schedule Status:'}
                   </strong>
                   <div style={{ marginTop: '0.25rem' }}>
@@ -402,9 +402,9 @@ export default function CircularScheduleModal({
                   <span
                     className="badge"
                     style={{
-                      background: legData.status === 'scheduled' ? '#eff6ff' : '#f1f5f9',
-                      color: legData.status === 'scheduled' ? '#1d4ed8' : '#475569',
-                      border: '1px solid #bfdbfe',
+                      background: legData.status === 'scheduled' ? 'rgba(59, 130, 246, 0.12)' : 'var(--surface-subtle)',
+                      color: legData.status === 'scheduled' ? '#3b82f6' : 'var(--text-muted)',
+                      border: '1px solid rgba(59, 130, 246, 0.3)',
                       textTransform: 'capitalize',
                       fontSize: '0.75rem',
                     }}
@@ -421,13 +421,13 @@ export default function CircularScheduleModal({
                 style={{
                   padding: '0.85rem 1rem',
                   borderRadius: '8px',
-                  background: '#fffbeb',
-                  border: '1px solid #fde68a',
+                  background: 'rgba(245, 158, 11, 0.12)',
+                  border: '1px solid rgba(245, 158, 11, 0.3)',
                   marginBottom: '1.25rem',
                   fontSize: '0.85rem',
                 }}
               >
-                <div style={{ fontWeight: 600, color: '#b45309', marginBottom: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <div style={{ fontWeight: 600, color: '#f59e0b', marginBottom: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                   <span>⏳</span> {isReschedule ? 'Rescheduling Proposal Pending' : 'New Schedule Proposal Pending'}
                 </div>
                 <div style={{ color: '#78350f', lineHeight: 1.5 }}>
@@ -528,8 +528,8 @@ export default function CircularScheduleModal({
                     </button>
                   </div>
                 ) : (
-                  <div style={{ background: '#fef2f2', padding: '0.85rem', borderRadius: '8px', border: '1px solid #fecaca' }}>
-                    <div style={{ fontWeight: 600, color: '#991b1b', fontSize: '0.85rem', marginBottom: '0.5rem' }}>
+                  <div style={{ background: 'rgba(239, 68, 68, 0.12)', padding: '0.85rem', borderRadius: '8px', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
+                    <div style={{ fontWeight: 600, color: '#ef4444', fontSize: '0.85rem', marginBottom: '0.5rem' }}>
                       Decline Schedule Proposal
                     </div>
                     <textarea
@@ -582,7 +582,7 @@ export default function CircularScheduleModal({
                       style={{
                         padding: '0.4rem 0.65rem',
                         borderRadius: '6px',
-                        background: '#f8fafc',
+                        background: 'var(--surface-subtle)',
                         border: '1px solid var(--border)',
                         fontSize: '0.76rem',
                         display: 'flex',
@@ -600,9 +600,9 @@ export default function CircularScheduleModal({
                         style={{
                           fontSize: '0.68rem',
                           textTransform: 'uppercase',
-                          background: item.status === 'confirmed' ? '#ecfdf5' : '#fef2f2',
-                          color: item.status === 'confirmed' ? '#065f46' : '#991b1b',
-                          border: `1px solid ${item.status === 'confirmed' ? '#a7f3d0' : '#fecaca'}`,
+                          background: item.status === 'confirmed' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+                          color: item.status === 'confirmed' ? '#10b981' : '#ef4444',
+                          border: `1px solid ${item.status === 'confirmed' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
                         }}
                       >
                         {item.status}
