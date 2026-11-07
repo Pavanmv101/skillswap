@@ -5,6 +5,11 @@
   padding: 0;
 }
 
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 80px;
+}
+
 :root, [data-theme="light"] {
   --primary: #6366f1;
   --primary-hover: #4f46e5;

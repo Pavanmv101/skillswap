@@ -1,5 +1,5 @@
-import React from 'react'
-import { Link } from 'react-router-dom'
+import React, { useEffect } from 'react'
+import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import {
   IconLogo,
@@ -85,6 +85,17 @@ const CAPABILITIES = [
 
 export default function Landing() {
   const { token } = useAuth()
+  const location = useLocation()
+
+  useEffect(() => {
+    if (location.hash) {
+      const id = location.hash.replace('#', '')
+      const el = document.getElementById(id)
+      if (el) {
+        setTimeout(() => el.scrollIntoView({ behavior: 'smooth' }), 60)
+      }
+    }
+  }, [location.hash])
 
   return (
     <div className="landing-wrapper">
@@ -216,7 +227,7 @@ export default function Landing() {
       </section>
 
       {/* ─── Advanced Exchange Architecture (Bilateral vs Circular) ─────────── */}
-      <section className="landing-section section-contrast">
+      <section id="architecture" className="landing-section section-contrast">
         <div className="section-container">
           <div className="section-header-block">
             <span className="section-pill">EXCHANGE ARCHITECTURE</span>
@@ -306,7 +317,7 @@ export default function Landing() {
       </section>
 
       {/* ─── Platform Capabilities Grid ──────────────────────────────────────── */}
-      <section className="landing-section">
+      <section id="features" className="landing-section">
         <div className="section-container">
           <div className="section-header-block">
             <span className="section-pill">SYSTEM CAPABILITIES</span>
@@ -334,7 +345,7 @@ export default function Landing() {
       </section>
 
       {/* ─── Trust & Verification Section ───────────────────────────────────── */}
-      <section className="landing-section section-contrast">
+      <section id="trust" className="landing-section section-contrast">
         <div className="section-container">
           <div className="trust-banner-card">
             <div className="trust-card-content">
@@ -363,7 +374,7 @@ export default function Landing() {
       </section>
 
       {/* ─── Bottom CTA Banner ──────────────────────────────────────────────── */}
-      <section className="landing-cta-banner">
+      <section id="community" className="landing-cta-banner">
         <div className="section-container cta-container">
           <div className="cta-content-box">
             <h2 className="cta-main-title">Ready to exchange knowledge with peers?</h2>
