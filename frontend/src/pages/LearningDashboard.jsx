@@ -592,7 +592,7 @@ export default function LearningDashboard() {
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                           <div>
                             <strong style={{ fontSize: '1rem' }}>{a.title}</strong>
-                            <span style={{ marginLeft: '.5rem', fontSize: '.75rem', padding: '2px 8px', borderRadius: 4, background: '#fff', border: '1px solid var(--border, #e2e8f0)' }}>
+                            <span style={{ marginLeft: '.5rem', fontSize: '.75rem', padding: '2px 8px', borderRadius: 4, background: 'var(--surface)', border: '1px solid var(--border)' }}>
                               {a.type === 'quiz' ? 'Multiple-Choice Quiz' : 'Practical Project Task'}
                             </span>
                           </div>

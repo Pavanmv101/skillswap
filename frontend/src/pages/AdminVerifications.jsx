@@ -200,7 +200,7 @@ export default function AdminVerifications() {
                       </span>
                     </div>
                     <div style={{ fontSize: '.78rem', color: 'var(--text-subtle)', marginTop: '.15rem' }}>
-                      {item.user?.email} • Submitted {new Date(item.createdAt).toLocaleDateString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                      {item.user?.email} • Submitted {new Date(item.createdAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
                     </div>
                   </div>
                 </div>

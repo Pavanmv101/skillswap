@@ -7,6 +7,17 @@ import SwapModal from '../components/SwapModal'
 import Stars from '../components/Stars'
 import Avatar from '../components/Avatar'
 import AvailabilityCalendar from '../components/AvailabilityCalendar'
+import {
+  IconSearch,
+  IconX,
+  IconDiscover,
+  IconShield,
+  IconCalendar,
+  IconSwaps,
+  IconClock,
+  IconUser,
+  IconCheckCircle
+} from '../components/Icons'
 
 const CATEGORY_FILTERS = [
   'All',
@@ -27,7 +38,7 @@ export default function Matches() {
   const [selectedFilter, setSelectedFilter] = useState('All')
   const [expandedCalendarId, setExpandedCalendarId] = useState(null)
 
-  // Network wide search results fallback
+  // Network-wide search results fallback
   const [globalSearchActive, setGlobalSearchActive] = useState(false)
   const [globalResults, setGlobalResults] = useState([])
   const [globalLoading, setGlobalLoading] = useState(false)
@@ -36,7 +47,6 @@ export default function Matches() {
   const [swapTarget, setSwapTarget] = useState(null)
   const [error, setError] = useState('')
 
-  // Load ranked matches and current user profile for mutual availability
   useEffect(() => {
     async function load() {
       try {
@@ -79,7 +89,7 @@ export default function Matches() {
       // 2. Category Filter
       if (selectedFilter === 'All') return true
       if (selectedFilter === 'High Match (70%+)') {
-        return m.compatibilityScore >= 70
+        return (m.compatibilityScore || 0) >= 70
       }
       if (selectedFilter === 'Schedule Match') {
         return m.availabilityOverlap === true
@@ -92,7 +102,6 @@ export default function Matches() {
     })
   }, [matches, search, selectedFilter])
 
-  // Clear all active filters
   function handleClearFilters() {
     setSearch('')
     setSelectedFilter('All')
@@ -100,7 +109,6 @@ export default function Matches() {
     setGlobalResults([])
   }
 
-  // Optional: Global network-wide search across unranked students
   async function handleGlobalSearch(e) {
     if (e) e.preventDefault()
     if (!search.trim()) return
@@ -122,24 +130,25 @@ export default function Matches() {
   if (loading) return <Spinner message="Computing bidirectional compatibility matches…" />
 
   return (
-    <div className="page">
+    <div className="page matches-page">
+      {/* ─── Header ────────────────────────────────────────────────────────── */}
       <div className="page-header-flex">
         <div>
-          <h2 className="page-title">Peer Skill Matches</h2>
+          <h1 className="page-title">Discover Peers & Matches</h1>
           <p className="page-sub">
-            Ranked by mutual skill overlap (up to 60 pts forward + 40 pts reverse bidirectionality bonus).
+            Ranked by mutual skill compatibility and schedule overlap. Find peers ready to trade knowledge.
           </p>
         </div>
       </div>
 
-      {/* Search Bar & Filter Controls */}
-      <div className="search-form-container">
-        <form onSubmit={e => e.preventDefault()} className="search-form">
-          <div className="search-input-wrapper">
-            <span className="search-icon">🔍</span>
+      {/* ─── Search & Category Filter Section ──────────────────────────────── */}
+      <div className="card matches-search-card">
+        <div className="matches-search-row">
+          <div className="search-input-wrap">
+            <IconSearch size={18} className="search-leading-icon" />
             <input
-              className="form-input search-input"
-              placeholder="Search by student name, skill offered, skill wanted (e.g. React, Python, Figma)…"
+              className="matches-search-input"
+              placeholder="Search by student name, taught skill, wanted skill (e.g. React, Python, UI/UX)…"
               value={search}
               onChange={e => {
                 setSearch(e.target.value)
@@ -149,32 +158,33 @@ export default function Matches() {
             {search && (
               <button
                 type="button"
-                className="search-clear-btn"
+                className="search-clear-action"
                 onClick={() => setSearch('')}
-                title="Clear search"
+                title="Clear search query"
               >
-                ✕
+                <IconX size={15} />
               </button>
             )}
           </div>
+
           {isFiltering && (
             <button
               type="button"
-              className="btn btn-muted btn-sm"
+              className="btn btn-secondary btn-sm"
               onClick={handleClearFilters}
             >
               Reset Filters
             </button>
           )}
-        </form>
+        </div>
 
-        {/* Category Filter Pills */}
-        <div className="filter-pills-row" style={{ marginTop: '0.75rem' }}>
+        {/* Filter Pills */}
+        <div className="matches-pills-row">
           {CATEGORY_FILTERS.map(f => (
             <button
               key={f}
               type="button"
-              className={`filter-pill ${selectedFilter === f ? 'filter-pill-active' : ''}`}
+              className={`matches-filter-pill ${selectedFilter === f ? 'pill-active' : ''}`}
               onClick={() => {
                 setSelectedFilter(f)
                 if (globalSearchActive) setGlobalSearchActive(false)
@@ -186,38 +196,38 @@ export default function Matches() {
         </div>
       </div>
 
-      {/* Result Status Bar */}
-      <div className="matches-status-strip">
-        <div className="status-strip-left">
-          <span className="result-count-badge">
+      {/* ─── Results Summary Bar ───────────────────────────────────────────── */}
+      <div className="matches-status-bar">
+        <div className="status-bar-left">
+          <span className="results-badge">
             ⚡ {filteredMatches.length} Compatible Peer{filteredMatches.length !== 1 ? 's' : ''} Found
           </span>
           {isFiltering && (
-            <span className="active-filter-tag">
-              Filter: <strong>{selectedFilter}</strong> {search && `• Keyword: "${search}"`}
+            <span className="active-filter-indicator">
+              Category: <strong>{selectedFilter}</strong> {search && `• Keyword: "${search}"`}
             </span>
           )}
         </div>
+
         {search.trim() && !globalSearchActive && (
           <button
             type="button"
-            className="link-subtle"
-            style={{ background: 'none', border: 'none', cursor: 'pointer' }}
+            className="global-search-link"
             onClick={handleGlobalSearch}
           >
-            🔍 Search all registered students for "{search}" →
+            Search all registered students for "{search}" →
           </button>
         )}
       </div>
 
       {error && <div className="alert alert-info">💡 {error}</div>}
 
-      {/* Global Network Results Mode (if triggered) */}
+      {/* ─── Global Search View (Fallback) ─────────────────────────────────── */}
       {globalSearchActive ? (
-        <div style={{ marginTop: '1.25rem' }}>
+        <div className="global-results-wrap">
           <div className="section-title-row">
             <h3>Global Network Search: "{search}" ({globalResults.length})</h3>
-            <button className="btn btn-muted btn-sm" onClick={() => setGlobalSearchActive(false)}>
+            <button className="btn btn-secondary btn-sm" onClick={() => setGlobalSearchActive(false)}>
               Back to Compatibility Matches
             </button>
           </div>
@@ -226,7 +236,7 @@ export default function Matches() {
             <Spinner message="Searching student directory…" />
           ) : globalResults.length === 0 ? (
             <div className="empty-card">
-              <div className="empty-icon">🔎</div>
+              <IconSearch size={36} />
               <h3>No students found for "{search}"</h3>
               <p>Try searching for a different skill or reset your filters.</p>
               <button className="btn btn-primary btn-sm" onClick={handleClearFilters} style={{ marginTop: '1rem' }}>
@@ -239,12 +249,14 @@ export default function Matches() {
                 <div className="card peer-card" key={u._id}>
                   <div className="peer-card-header">
                     <Avatar name={u.name} size={48} />
-                    <div style={{ flex: 1 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
                       <Link to={`/user/${u._id}`} className="card-name">{u.name}</Link>
                       <Stars value={u.averageRating || 0} count={u.totalRatings} />
                     </div>
                   </div>
+
                   {u.bio && <p className="peer-bio">{u.bio}</p>}
+
                   <div className="peer-skills-section">
                     <div className="skills-group">
                       <span className="skills-label">Teaches:</span>
@@ -259,7 +271,7 @@ export default function Matches() {
                     </div>
                     {u.skillsWanted?.length > 0 && (
                       <div className="skills-group" style={{ marginTop: '.5rem' }}>
-                        <span className="skills-label">Wants:</span>
+                        <span className="skills-label">Wants to learn:</span>
                         <div className="tag-list">
                           {u.skillsWanted.map((s, idx) => (
                             <span className="tag tag-wanted" key={idx}>{s.skill}</span>
@@ -268,12 +280,13 @@ export default function Matches() {
                       </div>
                     )}
                   </div>
+
                   <div className="peer-card-footer">
                     <button
                       className="btn btn-primary btn-sm btn-block shadow-glow"
-                      onClick={() => setSwapTarget({ user: u, compatibilityScore: 0, compatibilityNote: 'Direct swap request' })}
+                      onClick={() => setSwapTarget({ user: u, compatibilityScore: 0, compatibilityNote: 'Direct exchange proposal' })}
                     >
-                      Propose Swap
+                      Propose Exchange
                     </button>
                   </div>
                 </div>
@@ -282,59 +295,45 @@ export default function Matches() {
           )}
         </div>
       ) : (
-        /* Ranked Matches Grid */
-        <div style={{ marginTop: '1rem' }}>
+        /* ─── Ranked Compatibility Matches Grid ──────────────────────────── */
+        <div className="ranked-matches-wrap">
           {filteredMatches.length === 0 ? (
             <div className="empty-card">
-              <div className="empty-icon">{isFiltering ? '🔍' : '🎯'}</div>
-              <h3>{isFiltering ? 'No matches fit this filter' : 'No matches yet'}</h3>
+              <IconDiscover size={40} />
+              <h3>{isFiltering ? 'No matches fit this filter' : 'No compatible peers found yet'}</h3>
               <p style={{ maxWidth: 480, margin: '.5rem auto 1.5rem', color: 'var(--text-muted)' }}>
                 {isFiltering
                   ? `No peers found matching "${search}" in the "${selectedFilter}" category. Try resetting filters or searching the wider network.`
                   : matches.length === 0
-                  ? 'Add skills you want to learn in your profile to let our matching algorithm find peers for you.'
+                  ? 'Add skills you want to learn in your profile to let our matching algorithm find compatible partners for you.'
                   : 'Try selecting "All" or switching filters to see other compatible peers.'}
               </p>
               <div style={{ display: 'flex', gap: '.75rem', justifyContent: 'center', flexWrap: 'wrap' }}>
                 {isFiltering && (
-                  <button className="btn btn-muted" onClick={handleClearFilters}>
-                    Clear All Filters
+                  <button className="btn btn-secondary" onClick={handleClearFilters}>
+                    Reset Filters
                   </button>
                 )}
-                {search.trim() && (
-                  <button className="btn btn-primary" onClick={handleGlobalSearch}>
-                    Search Entire Network for "{search}"
-                  </button>
-                )}
-                {!isFiltering && matches.length === 0 && (
-                  <Link to="/profile" className="btn btn-primary shadow-glow">
-                    Add Skills to Profile →
-                  </Link>
-                )}
+                <Link to="/profile" className="btn btn-primary shadow-glow">
+                  Update My Skills →
+                </Link>
               </div>
             </div>
           ) : (
             <div className="card-grid">
               {filteredMatches.map(m => {
-                const isCalendarOpen = expandedCalendarId === m.user._id
+                const isCalExpanded = expandedCalendarId === m.user._id
                 return (
                   <div className="card peer-card" key={m.user._id}>
-                    <div className="peer-card-header" style={{ alignItems: 'flex-start' }}>
+                    <div className="peer-card-header">
                       <Avatar name={m.user.name} size={48} />
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.4rem' }}>
-                          <Link to={`/user/${m.user._id}`} className="card-name" style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '.5rem' }}>
+                          <Link to={`/user/${m.user._id}`} className="card-name">
                             {m.user.name}
                           </Link>
-                          {m.availabilityOverlap === true && (
-                            <span
-                              className="badge badge-green"
-                              style={{ cursor: 'pointer', flexShrink: 0 }}
-                              onClick={() => setExpandedCalendarId(isCalendarOpen ? null : m.user._id)}
-                              title="Click to view weekly schedule alignment"
-                            >
-                              ⏰ Schedule Aligned
-                            </span>
+                          {m.user.skillsOffered?.some(s => s.verified) && (
+                            <span className="badge-verified-inline" title="Verified Skill Holder">✓ Verified</span>
                           )}
                         </div>
                         <Stars value={m.user.averageRating || 0} count={m.user.totalRatings} />
@@ -343,10 +342,21 @@ export default function Matches() {
 
                     {m.user.bio && <p className="peer-bio">{m.user.bio}</p>}
 
-                    {/* Compatibility Progress Bar */}
-                    <CompatBar score={m.compatibilityScore} note={m.compatibilityNote} />
+                    {/* Compatibility Score Bar */}
+                    <CompatBar
+                      score={m.compatibilityScore}
+                      note={m.compatibilityNote}
+                    />
 
-                    {/* Skills Tags */}
+                    {/* Schedule Overlap Tag */}
+                    {m.availabilityOverlap && (
+                      <div className="schedule-overlap-notice">
+                        <IconClock size={14} />
+                        <span>Schedule Overlap Detected (Compatible Weekly Slots)</span>
+                      </div>
+                    )}
+
+                    {/* Skills Breakdown */}
                     <div className="peer-skills-section">
                       <div className="skills-group">
                         <span className="skills-label">Teaches:</span>
@@ -354,53 +364,52 @@ export default function Matches() {
                           {(m.user.skillsOffered || []).map((s, idx) => (
                             <span className="tag" key={idx}>
                               {s.skill} <small style={{ opacity: 0.7 }}>({s.level})</small>
-                              {s.verified && (
-                                <span className="badge-verified-inline" title="Skill Verified by SkillSwap">✓ Verified</span>
-                              )}
+                              {s.verified && <span className="badge-verified-inline" title="Verified">✓</span>}
                             </span>
                           ))}
                         </div>
                       </div>
 
                       {m.user.skillsWanted?.length > 0 && (
-                        <div className="skills-group" style={{ marginTop: '.5rem' }}>
-                          <span className="skills-label">Wants:</span>
+                        <div className="skills-group" style={{ marginTop: '.6rem' }}>
+                          <span className="skills-label">Wants to learn:</span>
                           <div className="tag-list">
                             {m.user.skillsWanted.map((s, idx) => (
-                              <span className="tag tag-wanted" key={idx}>
-                                {s.skill}
-                              </span>
+                              <span className="tag tag-wanted" key={idx}>{s.skill}</span>
                             ))}
                           </div>
                         </div>
                       )}
                     </div>
 
-                    {/* Interactive Calendar Accordion */}
-                    {isCalendarOpen && (
+                    {/* Mutual Availability Accordion */}
+                    {isCalExpanded && (
                       <div style={{ marginTop: '.85rem' }}>
                         <AvailabilityCalendar
                           slots={m.user.availabilitySlots || []}
                           peerSlots={myProfile?.availabilitySlots || []}
-                          title={`${m.user.name}'s Free Hours`}
+                          title={`${m.user.name}'s Availability`}
                         />
                       </div>
                     )}
 
-                    <div className="peer-card-footer" style={{ display: 'flex', gap: '.5rem', marginTop: 'auto', paddingTop: '.75rem' }}>
-                      <button
-                        type="button"
-                        className="btn btn-muted btn-sm"
-                        onClick={() => setExpandedCalendarId(isCalendarOpen ? null : m.user._id)}
-                        title="View availability calendar"
-                      >
-                        {isCalendarOpen ? 'Hide Hours' : '📅 Hours'}
-                      </button>
+                    {/* Card Actions */}
+                    <div className="peer-card-footer" style={{ display: 'flex', gap: '.5rem', marginTop: 'auto', paddingTop: '.85rem' }}>
+                      {m.user.availabilitySlots?.length > 0 && (
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => setExpandedCalendarId(isCalExpanded ? null : m.user._id)}
+                        >
+                          <IconCalendar size={14} /> {isCalExpanded ? 'Hide Slots' : 'Schedule'}
+                        </button>
+                      )}
+
                       <button
                         className="btn btn-primary btn-block shadow-glow"
                         onClick={() => setSwapTarget(m)}
                       >
-                        ⚡ Request Swap
+                        Request Swap
                       </button>
                     </div>
                   </div>
@@ -411,11 +420,15 @@ export default function Matches() {
         </div>
       )}
 
-      {/* Swap Modal */}
+      {/* Swap Request Modal */}
       {swapTarget && (
         <SwapModal
-          match={swapTarget}
+          peer={swapTarget.user}
+          compatibilityScore={swapTarget.compatibilityScore}
           onClose={() => setSwapTarget(null)}
+          onSuccess={() => {
+            setSwapTarget(null)
+          }}
         />
       )}
     </div>

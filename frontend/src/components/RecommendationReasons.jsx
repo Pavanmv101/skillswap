@@ -36,16 +36,17 @@ export default function RecommendationReasons({ reasons = [] }) {
             margin:     '0.45rem 0 0 0',
             padding:    '0.6rem 0.75rem',
             listStyle:  'none',
-            background: 'var(--surface-alt, rgba(99,102,241,0.06))',
+            background: 'var(--surface-subtle)',
+            border:     '1px solid var(--border)',
             borderRadius: '8px',
             fontSize:   '0.8rem',
             lineHeight: 1.6,
-            color:      'var(--text-muted, #64748b)',
+            color:      'var(--text-secondary)',
           }}
         >
           {reasons.map((r, i) => (
             <li key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '0.4rem' }}>
-              <span style={{ color: 'var(--primary, #6366f1)', marginTop: '0.1rem' }}>✦</span>
+              <span style={{ color: 'var(--primary)', marginTop: '0.1rem' }}>✦</span>
               <span>{r}</span>
             </li>
           ))}

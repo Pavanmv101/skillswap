@@ -17,23 +17,24 @@ export default function SkillSuggestionPill({ suggestion }) {
         gap:           '0.5rem',
         padding:       '0.45rem 0.8rem',
         borderRadius:  '999px',
-        border:        '1px solid var(--border, #e2e8f0)',
-        background:    'var(--card-bg, #fff)',
+        border:        '1px solid var(--border)',
+        background:    'var(--surface)',
+        color:         'var(--text-main)',
         fontSize:      '0.82rem',
         whiteSpace:    'nowrap',
         cursor:        'default',
       }}
     >
-      <span style={{ fontWeight: 600 }}>{skill}</span>
+      <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>{skill}</span>
       {category && category !== 'General' && (
-        <span style={{ fontSize: '0.72rem', color: 'var(--text-muted, #64748b)' }}>
+        <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
           {category}
         </span>
       )}
       <span
         style={{
-          background:   '#eff6ff',
-          color:        '#2563eb',
+          background:   'var(--primary-light)',
+          color:        'var(--primary)',
           borderRadius: '999px',
           padding:      '0.1rem 0.45rem',
           fontSize:     '0.72rem',
@@ -47,7 +48,7 @@ export default function SkillSuggestionPill({ suggestion }) {
         style={{
           fontSize:     '0.72rem',
           fontWeight:   600,
-          color:        'var(--primary, #6366f1)',
+          color:        'var(--primary)',
           textDecoration: 'none',
           padding:      '0.1rem 0.4rem',
           borderRadius: '6px',

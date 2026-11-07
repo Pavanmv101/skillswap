@@ -47,9 +47,9 @@ export default function RecommendationCard({ rec, mySlots = [], onRequestSwap })
         <div
           style={{
             fontSize:     '0.78rem',
-            color:        '#d97706',
-            background:   '#fffbeb',
-            border:       '1px solid #fde68a',
+            color:        'var(--accent, #f59e0b)',
+            background:   'rgba(245, 158, 11, 0.1)',
+            border:       '1px solid rgba(245, 158, 11, 0.25)',
             borderRadius: '6px',
             padding:      '0.3rem 0.6rem',
             marginTop:    '0.5rem',
