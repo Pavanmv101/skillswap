@@ -61,13 +61,16 @@ export default function Login() {
   }
 
   return (
-    <div className="auth-page-container">
+    <div className="auth-cinematic-shell">
+      <div className="auth-ambient-halo" />
       <div className="auth-card-wrapper">
-        <div className="auth-card">
+        <div className="auth-glass-card">
           {/* Header */}
           <div className="auth-header">
             <Link to="/" className="auth-brand-link" title="SkillSwap Home">
-              <IconLogo size={32} />
+              <div className="brand-icon-halo">
+                <IconLogo size={32} />
+              </div>
               <span className="brand-name">SkillSwap</span>
             </Link>
             <h1 className="auth-title">Welcome back</h1>
@@ -150,7 +153,7 @@ export default function Login() {
             </div>
 
             <button
-              className="btn btn-primary btn-block auth-submit-btn shadow-glow"
+              className="btn-cinematic-primary btn-block auth-submit-btn"
               type="submit"
               disabled={loading}
             >

@@ -1,60 +1,59 @@
-import React, { useEffect } from 'react'
+import { useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import {
-  IconLogo,
-  IconArrowRight,
-  IconDiscover,
-  IconSwaps,
-  IconCalendar,
-  IconLearning,
-  IconShield,
+  IconSearch,
   IconRepeat,
-  IconBookOpen,
+  IconVideo,
+  IconShield,
+  IconLearning,
+  IconCalendar,
+  IconArrowRight,
+  IconCheckCircle,
   IconAward,
   IconUsers,
-  IconCheckCircle,
-  IconVideo
+  IconSparkles,
+  IconLogo
 } from '../components/Icons'
 
 const CORE_STEPS = [
   {
     step: '01',
-    icon: IconDiscover,
-    title: 'Discover Complementary Peers',
-    desc: 'Our bidirectional scoring algorithm analyzes your taught and wanted skills, finding peers who need what you know and teach what you seek.'
+    title: 'Profile & Skills',
+    desc: 'List the disciplines you have mastered and the skills you aspire to acquire. No credit card or currency required.',
+    icon: IconSparkles
   },
   {
     step: '02',
-    icon: IconRepeat,
-    title: 'Exchange Knowledge Without Money',
-    desc: 'Pure peer-to-peer barter. Every hour you spend teaching earns you an hour of focused learning. No transaction fees, credits, or subscriptions.'
+    title: 'Mutual Match Engine',
+    desc: 'Our barter algorithm surfaces peers whose learning goals complement your teaching offerings with compatibility scores.',
+    icon: IconSearch
   },
   {
     step: '03',
-    icon: IconCalendar,
-    title: 'Coordinate Overlapping Schedules',
-    desc: 'Compare weekly recurring availability windows to pinpoint mutual free times automatically, preventing tedious back-and-forth scheduling.'
+    title: 'Slot Synchronization',
+    desc: 'Select mutually available time windows across timezones without tedious scheduling back-and-forth.',
+    icon: IconCalendar
   },
   {
     step: '04',
-    icon: IconBookOpen,
-    title: 'Track Structured Roadmaps',
-    desc: 'Follow curated learning tracks with milestone checklists, resource recommendations, and interactive assessment quizzes to measure real progress.'
+    title: 'Live P2P Session',
+    desc: 'Meet directly in built-in WebRTC video rooms with screen sharing, device selection, and zero required downloads.',
+    icon: IconVideo
   },
   {
     step: '05',
-    icon: IconAward,
-    title: 'Build Verifiable Credibility',
-    desc: 'Earn post-swap endorsements, showcase project proofs, and obtain administrator-reviewed skill credentials that peers can trust.'
+    title: 'Reputation & Growth',
+    desc: 'Verify completed exchanges, record mutual reliability, and earn skill badges backed by real peer reviews.',
+    icon: IconAward
   }
 ]
 
 const CAPABILITIES = [
   {
-    icon: IconSwaps,
-    title: 'Bidirectional Matching',
-    desc: 'Calculates reciprocal affinity up to 100 points, prioritizing exact skill overlaps and balanced learning levels.'
+    icon: IconSearch,
+    title: 'Smart Barter Matching',
+    desc: 'Dynamic scoring computes skill overlap, mutual requirements, and timezone synchronicity to suggest optimal exchange partners.'
   },
   {
     icon: IconRepeat,
@@ -97,10 +96,19 @@ export default function Landing() {
     }
   }, [location.hash])
 
+  function scrollToSection(e, id) {
+    e.preventDefault()
+    const el = document.getElementById(id)
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth' })
+    }
+  }
+
   return (
     <div className="landing-wrapper">
       {/* ─── Hero Section ────────────────────────────────────────────────────── */}
       <section className="hero-section">
+        <div className="hero-ambient-halo" />
         <div className="hero-container">
           <div className="hero-pill-badge">
             <span className="hero-pulse-dot" />
@@ -113,21 +121,25 @@ export default function Landing() {
           </h1>
 
           <p className="hero-description">
-            SkillSwap is a pure peer-to-peer knowledge exchange. Connect with peers to trade coding lessons for design mentorship, language practice for data analysis, and technical skills — without monetary transactions.
+            Exchange skills, share knowledge, and grow together — without exchanging money.
           </p>
 
           <div className="hero-cta-group">
             {token ? (
-              <Link to="/dashboard" className="btn btn-primary btn-lg shadow-glow">
-                Go to Workspace <IconArrowRight size={18} />
+              <Link to="/dashboard" className="btn-cinematic-primary">
+                Open Workspace <IconArrowRight size={16} />
               </Link>
             ) : (
               <>
-                <Link to="/register" className="btn btn-primary btn-lg shadow-glow">
-                  Start Learning Free <IconArrowRight size={18} />
+                <Link to="/register" className="btn-cinematic-primary">
+                  Start Learning <IconArrowRight size={16} />
                 </Link>
-                <a href="#how-it-works" className="btn btn-secondary btn-lg">
-                  Explore How It Works
+                <a
+                  href="#features"
+                  onClick={(e) => scrollToSection(e, 'features')}
+                  className="btn-cinematic-secondary"
+                >
+                  Explore Skills
                 </a>
               </>
             )}
@@ -135,59 +147,63 @@ export default function Landing() {
 
           {/* ─── Live Barter Mockup Composition ───────────────────────────────── */}
           <div className="hero-mockup-wrapper">
+            <div className="hero-showcase-glow" />
             <div className="hero-mockup-card">
               <div className="mockup-card-top">
                 <div className="mockup-profile">
                   <div className="mockup-avatar avatar-indigo">AS</div>
                   <div>
                     <div className="mockup-name">Aarav Sharma</div>
-                    <div className="mockup-sub">Computer Science</div>
+                    <div className="mockup-sub">Full Stack Engineer • 100% Reliability</div>
                   </div>
                 </div>
 
                 <div className="mockup-score-badge">
-                  <span className="score-number">98</span>
+                  <span className="score-number">98%</span>
                   <span className="score-label">MATCH SCORE</span>
                 </div>
 
                 <div className="mockup-profile mockup-profile-right">
                   <div>
                     <div className="mockup-name">Priya Patel</div>
-                    <div className="mockup-sub">Data & Analytics</div>
+                    <div className="mockup-sub">Data Scientist • 5.0 ★ Rating</div>
                   </div>
                   <div className="mockup-avatar avatar-emerald">PP</div>
                 </div>
               </div>
 
-              {/* Barter Flow Exchange Bar */}
+              {/* Bilateral Exchange Visual Flow */}
               <div className="mockup-flow-grid">
                 <div className="mockup-flow-leg">
-                  <span className="leg-label">Aarav teaches</span>
-                  <div className="leg-skill-tag teach-tag">
-                    <span className="dot dot-indigo" /> React & TypeScript
+                  <span className="leg-label">Aarav Teaches</span>
+                  <div className="leg-skill-tag">
+                    <span className="dot dot-indigo" />
+                    <span>React & Next.js Architecture</span>
                   </div>
                 </div>
 
-                <div className="mockup-flow-icon" title="Bidirectional exchange">
-                  <IconSwaps size={22} />
+                <div className="mockup-flow-icon">
+                  <IconRepeat size={24} />
                 </div>
 
-                <div className="mockup-flow-leg">
-                  <span className="leg-label">Priya teaches</span>
-                  <div className="leg-skill-tag learn-tag">
-                    <span className="dot dot-emerald" /> Python & Machine Learning
+                <div className="mockup-flow-leg" style={{ textAlign: 'right' }}>
+                  <span className="leg-label">Priya Teaches</span>
+                  <div className="leg-skill-tag" style={{ justifyContent: 'flex-end' }}>
+                    <span>Python & Machine Learning</span>
+                    <span className="dot dot-emerald" />
                   </div>
                 </div>
               </div>
 
+              {/* Session Status Footer */}
               <div className="mockup-card-bottom">
                 <div className="mockup-detail-item">
                   <IconCalendar size={15} />
-                  <span>Mutual Slot: <strong>Monday 18:00 – 19:30 UTC</strong></span>
+                  <span>Next Swap: <strong>Tomorrow at 3:00 PM (IST)</strong></span>
                 </div>
-                <div className="mockup-detail-item status-live">
+                <div className="mockup-detail-item">
                   <span className="status-indicator-dot" />
-                  <span>WebRTC P2P Video Active</span>
+                  <span className="status-live">WebRTC P2P Video Active</span>
                 </div>
               </div>
             </div>
@@ -207,7 +223,7 @@ export default function Landing() {
           </div>
 
           <div className="steps-flow-container">
-            {CORE_STEPS.map((s, idx) => {
+            {CORE_STEPS.map((s) => {
               const Icon = s.icon
               return (
                 <div className="step-flow-card" key={s.step}>
@@ -328,7 +344,7 @@ export default function Landing() {
           </div>
 
           <div className="capabilities-grid">
-            {CAPABILITIES.map((cap, i) => {
+            {CAPABILITIES.map((cap) => {
               const Icon = cap.icon
               return (
                 <div className="capability-card" key={cap.title}>
@@ -382,11 +398,11 @@ export default function Landing() {
               Set up your profile in minutes, list skills you can teach, and discover partners ready to barter learning.
             </p>
             <div className="cta-btn-row">
-              <Link to={token ? "/dashboard" : "/register"} className="btn btn-primary btn-lg shadow-glow">
-                Get Started Free <IconArrowRight size={18} />
+              <Link to={token ? "/dashboard" : "/register"} className="btn-cinematic-primary">
+                Start Learning Free <IconArrowRight size={16} />
               </Link>
               {!token && (
-                <Link to="/login" className="btn btn-secondary btn-lg">
+                <Link to="/login" className="btn-cinematic-secondary">
                   Sign In with Demo
                 </Link>
               )}

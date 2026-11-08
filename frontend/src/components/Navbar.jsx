@@ -17,7 +17,10 @@ export default function Navbar() {
     if (location.pathname === '/') {
       const el = document.getElementById(sectionId)
       if (el) {
-        el.scrollIntoView({ behavior: 'smooth' })
+        setTimeout(() => {
+          el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+          window.history.replaceState(null, '', `/#${sectionId}`)
+        }, 50)
       }
     } else {
       navigate(`/#${sectionId}`)
@@ -25,11 +28,13 @@ export default function Navbar() {
   }
 
   return (
-    <nav className="marketing-navbar">
-      <div className="marketing-navbar-inner">
+    <header className="marketing-navbar-wrapper">
+      <nav className="marketing-navbar-floating" aria-label="Main Navigation">
         {/* Brand */}
-        <Link to="/" className="marketing-brand">
-          <IconLogo size={28} />
+        <Link to="/" className="marketing-brand" onClick={() => setMobileMenuOpen(false)}>
+          <div className="brand-icon-halo">
+            <IconLogo size={24} />
+          </div>
           <span className="brand-name">SkillSwap</span>
           <span className="marketing-tag">Peer Learning</span>
         </Link>
@@ -46,25 +51,25 @@ export default function Navbar() {
         <div className="marketing-nav-actions">
           <button
             type="button"
-            className="header-icon-btn"
+            className="navbar-icon-pill"
             onClick={toggleTheme}
             aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
             title={isDark ? 'Light mode' : 'Dark mode'}
           >
-            {isDark ? <IconSun size={18} /> : <IconMoon size={18} />}
+            {isDark ? <IconSun size={17} /> : <IconMoon size={17} />}
           </button>
 
           {token ? (
-            <Link to="/dashboard" className="btn btn-primary btn-sm shadow-glow">
+            <Link to="/dashboard" className="btn-cinematic-primary btn-nav-cta">
               Workspace <IconArrowRight size={14} />
             </Link>
           ) : (
             <>
-              <Link to="/login" className="btn btn-ghost btn-sm">
+              <Link to="/login" className="nav-text-btn">
                 Sign In
               </Link>
-              <Link to="/register" className="btn btn-primary btn-sm shadow-glow">
-                Get Started Free
+              <Link to="/register" className="btn-cinematic-primary btn-nav-cta">
+                Start Learning <IconArrowRight size={14} />
               </Link>
             </>
           )}
@@ -72,40 +77,43 @@ export default function Navbar() {
           {/* Mobile Menu Toggle */}
           <button
             type="button"
-            className="mobile-header-menu-btn mobile-only"
+            className="navbar-mobile-toggle mobile-only"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             aria-label="Toggle navigation menu"
+            aria-expanded={mobileMenuOpen}
           >
             {mobileMenuOpen ? <IconX size={20} /> : <IconMenu size={20} />}
           </button>
         </div>
-      </div>
 
-      {/* Mobile Drawer for Marketing Nav */}
-      {mobileMenuOpen && (
-        <div className="marketing-mobile-drawer">
-          <a href="/#how-it-works" className="marketing-drawer-link" onClick={(e) => handleNavClick(e, 'how-it-works')}>How it Works</a>
-          <a href="/#features" className="marketing-drawer-link" onClick={(e) => handleNavClick(e, 'features')}>Features</a>
-          <a href="/#trust" className="marketing-drawer-link" onClick={(e) => handleNavClick(e, 'trust')}>Trust & Verification</a>
-          <a href="/#community" className="marketing-drawer-link" onClick={(e) => handleNavClick(e, 'community')}>Community</a>
-          <div className="marketing-drawer-actions">
-            {token ? (
-              <Link to="/dashboard" className="btn btn-primary btn-block" onClick={() => setMobileMenuOpen(false)}>
-                Workspace →
-              </Link>
-            ) : (
-              <>
-                <Link to="/login" className="btn btn-muted btn-block" onClick={() => setMobileMenuOpen(false)}>
-                  Sign In
+        {/* Mobile Floating Drawer */}
+        {mobileMenuOpen && (
+          <div className="marketing-mobile-drawer animate-pop-in">
+            <div className="drawer-links-group">
+              <a href="/#how-it-works" className="marketing-drawer-link" onClick={(e) => handleNavClick(e, 'how-it-works')}>How it Works</a>
+              <a href="/#features" className="marketing-drawer-link" onClick={(e) => handleNavClick(e, 'features')}>Features</a>
+              <a href="/#trust" className="marketing-drawer-link" onClick={(e) => handleNavClick(e, 'trust')}>Trust & Verification</a>
+              <a href="/#community" className="marketing-drawer-link" onClick={(e) => handleNavClick(e, 'community')}>Community</a>
+            </div>
+            <div className="marketing-drawer-actions">
+              {token ? (
+                <Link to="/dashboard" className="btn-cinematic-primary btn-block text-center" onClick={() => setMobileMenuOpen(false)}>
+                  Workspace <IconArrowRight size={14} />
                 </Link>
-                <Link to="/register" className="btn btn-primary btn-block" onClick={() => setMobileMenuOpen(false)}>
-                  Get Started Free →
-                </Link>
-              </>
-            )}
+              ) : (
+                <>
+                  <Link to="/login" className="btn-cinematic-secondary btn-block text-center" onClick={() => setMobileMenuOpen(false)}>
+                    Sign In
+                  </Link>
+                  <Link to="/register" className="btn-cinematic-primary btn-block text-center" onClick={() => setMobileMenuOpen(false)}>
+                    Start Learning Free <IconArrowRight size={14} />
+                  </Link>
+                </>
+              )}
+            </div>
           </div>
-        </div>
-      )}
-    </nav>
+        )}
+      </nav>
+    </header>
   )
 }

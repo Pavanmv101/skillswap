@@ -76,14 +76,31 @@ function AppLayout() {
     )
   }
 
-  // Public marketing & auth layout
-  if (isPublicRoute && !token) {
+  // Public marketing & landing layout (accessible whether authenticated or not)
+  if (location.pathname === '/') {
     return (
       <div className="marketing-shell">
         <Navbar />
         <main className="marketing-content">
           <Routes>
-            <Route path="/"         element={<Landing />} />
+            <Route path="/" element={<Landing />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </main>
+      </div>
+    )
+  }
+
+  // Auth routes (redirect to dashboard if already logged in)
+  if (['/login', '/register'].includes(location.pathname)) {
+    if (token) {
+      return <Navigate to="/dashboard" replace />
+    }
+    return (
+      <div className="marketing-shell">
+        <Navbar />
+        <main className="marketing-content">
+          <Routes>
             <Route path="/login"    element={<Login />} />
             <Route path="/register" element={<Register />} />
             <Route path="*"         element={<Navigate to="/" replace />} />

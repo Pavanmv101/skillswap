@@ -12,8 +12,7 @@ import {
   IconUser,
   IconArrowRight,
   IconCheck,
-  IconSparkles,
-  IconDiscover
+  IconSparkles
 } from '../components/Icons'
 
 const POPULAR_SKILLS = [
@@ -152,13 +151,16 @@ export default function Register() {
   }
 
   return (
-    <div className="auth-page-container">
+    <div className="auth-cinematic-shell">
+      <div className="auth-ambient-halo" />
       <div className="auth-card-wrapper auth-register-wrapper">
-        <div className="auth-card auth-card-wide">
+        <div className="auth-glass-card auth-card-wide">
           {/* Header */}
           <div className="auth-header">
             <Link to="/" className="auth-brand-link" title="SkillSwap Home">
-              <IconLogo size={32} />
+              <div className="brand-icon-halo">
+                <IconLogo size={32} />
+              </div>
               <span className="brand-name">SkillSwap</span>
             </Link>
             <h1 className="auth-title">Create your peer account</h1>
@@ -321,6 +323,27 @@ export default function Register() {
                 })}
               </div>
 
+              {/* Custom Skill Input */}
+              <div className="custom-skill-input-row" style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
+                <input
+                  type="text"
+                  className="auth-text-input"
+                  style={{ padding: '0.5rem 0.75rem' }}
+                  placeholder={`Add another skill to ${skillTarget}...`}
+                  value={customSkillInput}
+                  onChange={(e) => setCustomSkillInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') addCustomSkill(e) }}
+                />
+                <button
+                  type="button"
+                  className="btn-cinematic-secondary"
+                  style={{ padding: '0.5rem 1rem', fontSize: '0.8rem', whiteSpace: 'nowrap' }}
+                  onClick={addCustomSkill}
+                >
+                  Add Skill
+                </button>
+              </div>
+
               {/* Selected Summary */}
               <div className="skills-selected-summary">
                 <div className="summary-col">
@@ -356,7 +379,7 @@ export default function Register() {
             </div>
 
             <button
-              className="btn btn-primary btn-block auth-submit-btn shadow-glow"
+              className="btn-cinematic-primary btn-block auth-submit-btn"
               type="submit"
               disabled={loading}
             >
