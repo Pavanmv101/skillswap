@@ -727,6 +727,8 @@ button, input, select, textarea {
   text-decoration: none;
   color: var(--text-main);
   font-weight: 700;
+  white-space: nowrap !important;
+  flex-shrink: 0;
 }
 
 .brand-name {
@@ -734,6 +736,8 @@ button, input, select, textarea {
   font-weight: 800;
   letter-spacing: -0.025em;
   color: var(--text-main);
+  white-space: nowrap !important;
+  flex-shrink: 0;
 }
 
 .marketing-tag {
@@ -746,12 +750,15 @@ button, input, select, textarea {
   border-radius: 9999px;
   letter-spacing: 0.05em;
   border: 1px solid var(--surface-glass-border);
+  white-space: nowrap !important;
+  flex-shrink: 0;
 }
 
 .marketing-nav-links {
   display: flex;
   align-items: center;
   gap: 1.5rem;
+  flex-shrink: 0;
 }
 
 .marketing-nav-link {
@@ -761,7 +768,9 @@ button, input, select, textarea {
   text-decoration: none;
   padding: 0.35rem 0.75rem;
   border-radius: 9999px;
-  transition: all 0.2s ease;
+  transition: color 0.2s ease, background-color 0.2s ease;
+  white-space: nowrap !important;
+  flex-shrink: 0;
 }
 
 .marketing-nav-link:hover {
@@ -773,6 +782,8 @@ button, input, select, textarea {
   display: flex;
   align-items: center;
   gap: 0.65rem;
+  white-space: nowrap !important;
+  flex-shrink: 0;
 }
 
 .navbar-icon-pill,
@@ -788,6 +799,7 @@ button, input, select, textarea {
   color: var(--text-muted);
   cursor: pointer;
   transition: var(--transition);
+  flex-shrink: 0;
 }
 
 .navbar-icon-pill:hover,
@@ -805,6 +817,8 @@ button, input, select, textarea {
   padding: 0.4rem 0.85rem;
   border-radius: 9999px;
   transition: var(--transition);
+  white-space: nowrap !important;
+  flex-shrink: 0;
 }
 
 .nav-text-btn:hover {
@@ -814,6 +828,8 @@ button, input, select, textarea {
 .btn-nav-cta {
   padding: 0.42rem 1.15rem !important;
   font-size: 0.84rem !important;
+  white-space: nowrap !important;
+  flex-shrink: 0;
 }
 
 /* Mobile drawer under floating navbar */
@@ -891,6 +907,8 @@ button, input, select, textarea {
   border: 1px solid transparent;
   box-shadow: var(--btn-cinematic-pri-glow);
   cursor: pointer;
+  white-space: nowrap !important;
+  flex-shrink: 0;
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -916,6 +934,8 @@ button, input, select, textarea {
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   cursor: pointer;
+  white-space: nowrap !important;
+  flex-shrink: 0;
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -4278,6 +4298,40 @@ button, input, select, textarea {
 }
 
 /* ─── Responsive Media Queries ───────────────────────────────────────────── */
+@media (max-width: 1024px) {
+  .marketing-navbar-floating {
+    padding: 0 0.85rem;
+  }
+  .marketing-tag {
+    display: none !important;
+  }
+  .marketing-nav-links {
+    gap: 0.85rem;
+  }
+  .marketing-nav-link {
+    font-size: 0.82rem;
+    padding: 0.28rem 0.55rem;
+  }
+  .nav-text-btn {
+    font-size: 0.82rem;
+    padding: 0.35rem 0.65rem;
+  }
+  .btn-nav-cta {
+    padding: 0.38rem 0.95rem !important;
+    font-size: 0.8rem !important;
+  }
+}
+
+@media (max-width: 820px) {
+  .marketing-nav-links.desktop-only,
+  .marketing-nav-actions .nav-text-btn {
+    display: none !important;
+  }
+  .navbar-mobile-toggle.mobile-only {
+    display: flex !important;
+  }
+}
+
 @media (max-width: 900px) {
   .hero-section {
     padding: 4.5rem 1.25rem 3rem;

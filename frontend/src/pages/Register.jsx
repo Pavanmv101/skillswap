@@ -142,7 +142,10 @@ export default function Register() {
       }
       navigate('/dashboard')
     } catch (err) {
-      const msg = err.response?.data?.message || 'Registration failed. Please check your information.'
+      const msg = err.response?.data?.message
+        || (err.code === 'ECONNABORTED' ? err.message : null)
+        || (!err.response ? err.message : null)
+        || 'Registration failed. Please check your information.'
       setError(msg)
       addToast(msg, 'error')
     } finally {

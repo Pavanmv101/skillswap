@@ -46,7 +46,10 @@ export default function Login() {
       addToast(`Welcome back, ${data.user.name}!`, 'success')
       navigate('/dashboard')
     } catch (err) {
-      const msg = err.response?.data?.message || 'Login failed. Please check your credentials.'
+      const msg = err.response?.data?.message
+        || (err.code === 'ECONNABORTED' ? err.message : null)
+        || (!err.response ? err.message : null)
+        || 'Login failed. Please check your credentials.'
       setError(msg)
       addToast(msg, 'error')
     } finally {

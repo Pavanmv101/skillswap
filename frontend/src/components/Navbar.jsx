@@ -17,10 +17,14 @@ export default function Navbar() {
     if (location.pathname === '/') {
       const el = document.getElementById(sectionId)
       if (el) {
-        setTimeout(() => {
+        // Use rAF to defer scroll to the next paint frame, avoiding INP penalties
+        requestAnimationFrame(() => {
           el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-          window.history.replaceState(null, '', `/#${sectionId}`)
-        }, 50)
+          // Update URL hash after scroll initiates, in a separate microtask
+          requestAnimationFrame(() => {
+            window.history.replaceState(null, '', `/#${sectionId}`)
+          })
+        })
       }
     } else {
       navigate(`/#${sectionId}`)
