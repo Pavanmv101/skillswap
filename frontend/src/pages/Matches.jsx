@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import api from '../api/axios'
 import Spinner from '../components/Spinner'
@@ -41,6 +41,8 @@ export default function Matches() {
   // Network-wide search results fallback
   const [globalSearchActive, setGlobalSearchActive] = useState(false)
   const [globalResults, setGlobalResults] = useState([])
+  const searchVersion = useRef(0)
+  const [globalError, setGlobalError] = useState('')
   const [globalLoading, setGlobalLoading] = useState(false)
 
   const [loading, setLoading] = useState(true)
@@ -105,7 +107,14 @@ export default function Matches() {
   function handleClearFilters() {
     setSearch('')
     setSelectedFilter('All')
+    resetGlobalSearch()
+  }
+
+  function resetGlobalSearch() {
+    searchVersion.current += 1
     setGlobalSearchActive(false)
+    setGlobalLoading(false)
+    setGlobalError('')
     setGlobalResults([])
   }
 
@@ -113,15 +122,18 @@ export default function Matches() {
     if (e) e.preventDefault()
     if (!search.trim()) return
 
+    const version = ++searchVersion.current
+    setGlobalError('')
+    setGlobalResults([])
     setGlobalLoading(true)
     setGlobalSearchActive(true)
     try {
       const { data } = await api.get(`/match/search?q=${encodeURIComponent(search.trim())}`)
-      setGlobalResults(data || [])
-    } catch (err) {
-      setError('Global search failed')
+      if (version === searchVersion.current) setGlobalResults(data || [])
+    } catch {
+      if (version === searchVersion.current) setGlobalError('Network search failed. Please try again.')
     } finally {
-      setGlobalLoading(false)
+      if (version === searchVersion.current) setGlobalLoading(false)
     }
   }
 
@@ -152,14 +164,14 @@ export default function Matches() {
               value={search}
               onChange={e => {
                 setSearch(e.target.value)
-                if (globalSearchActive) setGlobalSearchActive(false)
+                resetGlobalSearch()
               }}
             />
             {search && (
               <button
                 type="button"
                 className="search-clear-action"
-                onClick={() => setSearch('')}
+                onClick={() => { setSearch(''); resetGlobalSearch() }}
                 title="Clear search query"
               >
                 <IconX size={15} />
@@ -187,7 +199,7 @@ export default function Matches() {
               className={`matches-filter-pill ${selectedFilter === f ? 'pill-active' : ''}`}
               onClick={() => {
                 setSelectedFilter(f)
-                if (globalSearchActive) setGlobalSearchActive(false)
+                resetGlobalSearch()
               }}
             >
               {f}
@@ -227,13 +239,15 @@ export default function Matches() {
         <div className="global-results-wrap">
           <div className="section-title-row">
             <h3>Global Network Search: "{search}" ({globalResults.length})</h3>
-            <button className="btn btn-secondary btn-sm" onClick={() => setGlobalSearchActive(false)}>
+            <button className="btn btn-secondary btn-sm" onClick={resetGlobalSearch}>
               Back to Compatibility Matches
             </button>
           </div>
 
           {globalLoading ? (
             <Spinner message="Searching student directory…" />
+          ) : globalError ? (
+            <div role="alert">{globalError} <button className="btn btn-secondary btn-sm" onClick={handleGlobalSearch}>Retry</button></div>
           ) : globalResults.length === 0 ? (
             <div className="empty-card">
               <IconSearch size={36} />
